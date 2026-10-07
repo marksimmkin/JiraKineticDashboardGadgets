@@ -1,0 +1,97 @@
+app:
+  id: ari:cloud:ecosystem::app/20a52cdd-a126-4077-84fb-b324c36762fd
+  runtime:
+    name: nodejs24.x
+
+modules:
+  jira:dashboardGadget:
+    - key: kinetic-dashboard-controller
+      title: Kinetic Dashboard Controller
+      description: Choose the JQL filter shared with Kinetic dashboard gadgets.
+      thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+      resource: controller
+      edit:
+        resource: controller
+      refreshable: false
+    - key: kinetic-dashboard-counter
+      title: Kinetic Dashboard Simple Counter
+      description: Count issues in the selected Kinetic dashboard filter.
+      thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+      resource: counter
+      refreshable: false
+    - key: kinetic-dashboard-simple-dates
+      title: Kinetic Dashboard Simple Dates
+      description: Show the start and end dates from the selected Kinetic dashboard filter.
+      thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+      resource: dates
+      refreshable: false
+    - key: kinetic-dashboard-status-bar-chart
+      title: Kinetic Dashboard Status Bar Chart
+      description: Count issues in the configured Jira statuses for the selected filter.
+      thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+      resource: status-chart
+      refreshable: false
+    - key: kinetic-dashboard-weighted-progress
+      title: Kinetic Dashboard Weighted Progress Bar
+      description: Compare elapsed time with weighted work completed for the selected filter.
+      thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+      resource: weighted-progress
+      refreshable: false
+    - key: kinetic-dashboard-weighted-burndown
+      title: Kinetic Dashboard Weighted Burndown
+      description: Compare weighted remaining work with an ideal burndown over the selected dates.
+      thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+      resource: weighted-burndown
+      refreshable: false
+    - key: kinetic-dashboard-status-pie-chart
+      title: Kinetic Dashboard Status Pie Chart
+      description: Show issue counts by configured Jira status as a pie chart.
+      thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+      resource: status-pie
+      refreshable: false
+    - key: kinetic-dashboard-list
+      title: Kinetic Dashboard List
+      description: List matching issues with configurable columns.
+      thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+      resource: issue-list
+      edit:
+        resource: issue-list
+      refreshable: false
+    - key: kinetic-dashboard-user-list
+      title: Kinetic Dashboard User List
+      description: Count matching issues by assignee and status.
+      thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+      resource: user-list
+      refreshable: false
+    - key: kinetic-dashboard-user-leaderboard
+      title: Kinetic Dashboard User Leaderboard
+      description: Compare weighted remaining issue scores by assignee.
+      thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+      resource: user-leaderboard
+      refreshable: false
+
+resources:
+  - key: controller
+    path: static/controller/dist
+  - key: counter
+    path: static/counter/dist
+  - key: dates
+    path: static/dates/dist
+  - key: status-chart
+    path: static/status-chart/dist
+  - key: weighted-progress
+    path: static/progress-bar/dist
+  - key: weighted-burndown
+    path: static/burndown/dist
+  - key: status-pie
+    path: static/status-pie/dist
+  - key: issue-list
+    path: static/issue-list/dist
+  - key: user-list
+    path: static/user-list/dist
+  - key: user-leaderboard
+    path: static/user-leaderboard/dist
+
+permissions:
+  scopes:
+    - read:jira-work

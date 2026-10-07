@@ -1,0 +1,1 @@
+A simple counter showing the total number of items in the JQL that comes from the [[Kinetic Dashboard Controller]].

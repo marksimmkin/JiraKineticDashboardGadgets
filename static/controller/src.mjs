@@ -1,0 +1,212 @@
+import { events, requestJira, view } from '@forge/bridge';
+import { configuredFilters, configuredStatuses, dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
+  GADGET_REFRESH, isForDashboard, selectedFilterPayload, statusKey, validateFilters, validateStatuses } from '../shared.mjs';
+
+const root = document.getElementById('app');
+
+function element(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+async function edit(context) {
+  const savedStatuses = configuredStatuses(context);
+  let jiraStatuses = [];
+  let statusLoadError = '';
+  try {
+    const response = await requestJira('/rest/api/3/status', { headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error();
+    const results = await response.json();
+    if (!Array.isArray(results)) throw new Error();
+    jiraStatuses = results.filter(status => statusKey(status?.name))
+      .map(status => ({ name: String(status.name).trim() }));
+  } catch {
+    statusLoadError = 'Could not load Jira statuses. Saved statuses can still be edited.';
+  }
+  const statusOptions = new Map([...savedStatuses, ...jiraStatuses].map(status => [statusKey(status.name), status]));
+  const sortedOptions = [...statusOptions.values()].sort((a, b) =>
+    a.name.localeCompare(b.name));
+
+  const form = element('form', 'panel');
+  const intro = element('p', 'muted', 'Name each filter and enter its JQL. Optional dates are shared with other Kinetic gadgets; they do not change the JQL count.');
+  const filtersHeading = element('h2', 'config-heading', 'Filters');
+  const rows = element('div', 'filter-list');
+  const statusesHeading = element('h2', 'config-heading', 'Statuses');
+  const statusHelp = element('p', 'muted', 'Choose Jira status names for the Status Bar and Pie Charts. Statuses with the same name are counted together. Weights are used by the progress, burndown, and leaderboard gadgets.');
+  const statusRows = element('div', 'status-list');
+  const statusWarning = element('p', 'muted', statusLoadError);
+  const error = element('p', 'error');
+  error.setAttribute('role', 'alert');
+  const add = element('button', 'button secondary', 'Add filter');
+  add.type = 'button';
+  const addStatus = element('button', 'button secondary', 'Add status');
+  addStatus.type = 'button';
+  addStatus.disabled = jiraStatuses.length === 0;
+  const save = element('button', 'button primary', 'Save filters and statuses');
+  save.type = 'submit';
+  const actions = element('div', 'actions');
+  actions.append(save);
+  form.append(intro, filtersHeading, rows, add, statusesHeading, statusHelp,
+    statusRows, addStatus, statusWarning, error, actions);
+  root.replaceChildren(form);
+
+  function addRow(filter = { name: '', jql: '', startDate: null, endDate: null }) {
+    const row = element('div', 'filter-row');
+    const nameLabel = element('label', 'field-label', 'Filter name');
+    const name = element('input', 'text-input filter-name-input');
+    name.type = 'text';
+    name.required = true;
+    name.maxLength = 100;
+    name.value = filter.name;
+    nameLabel.append(name);
+    const jqlLabel = element('label', 'field-label', 'JQL');
+    const jql = element('textarea', 'text-input filter-jql-input');
+    jql.required = true;
+    jql.rows = 2;
+    jql.value = filter.jql;
+    jqlLabel.append(jql);
+    const dates = element('div', 'date-fields');
+    const startLabel = element('label', 'field-label', 'Start Date');
+    const startDate = element('input', 'text-input filter-start-date-input');
+    startDate.type = 'date';
+    startDate.value = filter.startDate ?? '';
+    startLabel.append(startDate);
+    const endLabel = element('label', 'field-label', 'End Date');
+    const endDate = element('input', 'text-input filter-end-date-input');
+    endDate.type = 'date';
+    endDate.value = filter.endDate ?? '';
+    endLabel.append(endDate);
+    dates.append(startLabel, endLabel);
+    const remove = element('button', 'button subtle', 'Remove');
+    remove.type = 'button';
+    remove.addEventListener('click', () => row.remove());
+    row.append(nameLabel, jqlLabel, dates, remove);
+    rows.append(row);
+  }
+
+  const filters = configuredFilters(context);
+  (filters.length ? filters : [{ name: '', jql: '' }]).forEach(addRow);
+  add.addEventListener('click', () => addRow());
+
+  function addStatusRow(status = { name: '', weight: 1 }) {
+    const row = element('div', 'status-row');
+    const statusLabel = element('label', 'field-label', 'Jira status');
+    const select = element('select', 'text-input status-select');
+    const placeholder = element('option', '', 'Choose a status');
+    placeholder.value = '';
+    select.append(placeholder);
+    for (const optionStatus of sortedOptions) {
+      const option = element('option', '', optionStatus.name);
+      option.value = statusKey(optionStatus.name);
+      select.append(option);
+    }
+    select.value = statusKey(status.name);
+    select.required = true;
+    statusLabel.append(select);
+    const weightLabel = element('label', 'field-label', 'Weight (0–1)');
+    const weight = element('input', 'text-input status-weight');
+    weight.type = 'number';
+    weight.min = '0';
+    weight.max = '1';
+    weight.step = 'any';
+    weight.required = true;
+    weight.value = String(status.weight);
+    weightLabel.append(weight);
+    const remove = element('button', 'button subtle', 'Remove');
+    remove.type = 'button';
+    remove.addEventListener('click', () => row.remove());
+    row.append(statusLabel, weightLabel, remove);
+    statusRows.append(row);
+  }
+  savedStatuses.forEach(addStatusRow);
+  addStatus.addEventListener('click', () => addStatusRow());
+
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const next = [...rows.children].map(row => ({
+      name: row.querySelector('.filter-name-input').value.trim(),
+      jql: row.querySelector('.filter-jql-input').value.trim(),
+      startDate: row.querySelector('.filter-start-date-input').value || null,
+      endDate: row.querySelector('.filter-end-date-input').value || null,
+    }));
+    const nextStatuses = [...statusRows.children].map(row => {
+      const key = row.querySelector('.status-select').value;
+      return {
+        name: statusOptions.get(key)?.name ?? '',
+        weight: Number.parseFloat(row.querySelector('.status-weight').value),
+      };
+    });
+    error.textContent = validateFilters(next) || validateStatuses(nextStatuses);
+    if (error.textContent) return;
+    save.disabled = true;
+    try {
+      await view.submit({ filters: next, statuses: nextStatuses });
+    } catch {
+      error.textContent = 'Could not save the filters. Please try again.';
+      save.disabled = false;
+    }
+  });
+}
+
+async function display(context) {
+  const id = dashboardId(context);
+  const filters = configuredFilters(context);
+  const panel = element('section', 'panel controller');
+  const label = element('label', 'field-label', 'Active filter');
+  const select = element('select', 'text-input');
+  const summary = element('p', 'muted');
+  const dates = element('p', 'muted date-summary');
+  const status = element('p', 'status');
+  label.append(select);
+  panel.append(label, summary, dates, status);
+  root.replaceChildren(panel);
+
+  if (!id) {
+    status.textContent = 'Dashboard context is unavailable.';
+    return;
+  }
+  if (!filters.length) {
+    select.disabled = true;
+    status.textContent = 'Use the gadget menu to configure a filter.';
+  } else {
+    filters.forEach((filter, index) => {
+      const option = element('option', '', filter.name);
+      option.value = String(index);
+      select.append(option);
+    });
+  }
+
+  async function announce() {
+    const filter = filters[Number(select.value)] ?? null;
+    summary.textContent = filter ? filter.jql : '';
+    dates.textContent = filter
+      ? [filter.startDate && `Start: ${filter.startDate}`, filter.endDate && `End: ${filter.endDate}`].filter(Boolean).join(' · ')
+      : '';
+    await events.emit(FILTER_SELECTED, selectedFilterPayload(context, filter));
+  }
+  select.addEventListener('change', () => {
+    announce().catch(() => { status.textContent = 'Could not update the other gadgets.'; });
+  });
+  await events.on(FILTER_REQUEST, payload => {
+    if (isForDashboard(payload, id)) return announce();
+  });
+  await events.on(GADGET_REFRESH, payload => {
+    if (payload?.origin === 'dashboard' || payload?.gadgetId === gadgetId(context)) return announce();
+  });
+  await announce();
+}
+
+async function main() {
+  try {
+    await view.theme.enable();
+    const context = await view.getContext();
+    if (context.extension?.entryPoint === 'edit') await edit(context);
+    else await display(context);
+  } catch {
+    root.textContent = 'Could not load the controller. Refresh the dashboard and try again.';
+  }
+}
+
+main();

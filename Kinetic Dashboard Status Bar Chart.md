@@ -1,0 +1,1 @@
+A bar chart showing the total number of issues from the JQL filter that are in each of the statuses defined in the [[Kinetic Dashboard Controller]].

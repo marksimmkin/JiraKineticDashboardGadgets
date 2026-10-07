@@ -1,0 +1,1 @@
+A simple widget showing the start and end dates passed from the [[Kinetic Dashboard Controller]].

@@ -1,0 +1,16 @@
+node_modules/
+.npm-cache/
+.obsidian/
+.env
+.env.*
+!.env.example
+static/controller/dist/
+static/counter/dist/
+static/dates/dist/
+static/status-chart/dist/
+static/progress-bar/dist/
+static/burndown/dist/
+static/status-pie/dist/
+static/issue-list/dist/
+static/user-list/dist/
+static/user-leaderboard/dist/
