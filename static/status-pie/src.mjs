@@ -1,6 +1,7 @@
 import { events, requestJira, router, view } from '@forge/bridge';
 import { countIssuesByStatus } from '../status-counts.mjs';
 import { issueCountButton, narrowJql, statusClause, statusesClause } from '../drilldown.mjs';
+import { createStatusFilter } from '../status-filter.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
   GADGET_REFRESH, isForDashboard, statusKey } from '../shared.mjs';
 
@@ -29,13 +30,15 @@ async function main() {
     const content = node('div', 'pie-content');
     const message = node('p', 'status', 'Waiting for the controller…');
     message.setAttribute('role', 'status');
-    panel.append(heading, filterName, content, message);
-    root.replaceChildren(panel);
     let active = null;
     let generation = 0;
+    let cachedResult = null;
+    const statusFilter = createStatusFilter(id, gadgetId(context), render);
+    panel.append(heading, filterName, statusFilter.element, content, message);
+    root.replaceChildren(panel);
 
-    function showPie(result) {
-      const slices = active.statuses.map((status, index) => ({
+    function showPie(result, statuses) {
+      const slices = statuses.map((status, index) => ({
         name: status.name,
         count: result.counts[statusKey(status.name)] ?? 0,
         ids: result.statusIds[statusKey(status.name)] ?? [],
@@ -44,7 +47,7 @@ async function main() {
       const shown = slices.reduce((sum, slice) => sum + slice.count, 0);
       if (!shown) {
         if (result.total) message.replaceChildren(
-          'No issues are in configured statuses (',
+          'No issues are in selected statuses (',
           issueCountButton(router, numberFormat.format(result.total), active.jql,
             `Open all ${result.total} matching issues`),
           ' matching issues).',
@@ -67,7 +70,7 @@ async function main() {
         .map(slice => `${slice.name}: ${slice.count}`).join(', '));
       const center = issueCountButton(router, numberFormat.format(shown),
         narrowJql(active.jql, [statusesClause(slices.filter(slice => slice.count))]),
-        `Open ${shown} issues in configured statuses`);
+        `Open ${shown} issues in selected statuses`);
       center.classList.add('pie-center');
       graphic.append(center);
       const legend = node('div', 'pie-legend');
@@ -87,18 +90,30 @@ async function main() {
       message.replaceChildren(
         issueCountButton(router, numberFormat.format(shown),
           narrowJql(active.jql, [statusesClause(slices.filter(slice => slice.count))]),
-          `Open ${shown} issues in configured statuses`),
+          `Open ${shown} issues in selected statuses`),
         ...(shown === result.total ? [' matching issues'] : [
           ' of ',
           issueCountButton(router, numberFormat.format(result.total), active.jql,
             `Open all ${result.total} matching issues`),
-          ' matching issues in configured statuses',
+          ' matching issues in selected statuses',
         ]),
       );
     }
 
+    function render() {
+      content.replaceChildren();
+      if (!cachedResult || !active) return;
+      const visible = statusFilter.visibleStatuses();
+      if (!visible.length) {
+        message.textContent = 'Select at least one status.';
+        return;
+      }
+      showPie(cachedResult, visible);
+    }
+
     async function refresh() {
       const current = ++generation;
+      cachedResult = null;
       content.replaceChildren();
       if (!active?.jql) {
         message.textContent = 'Choose a filter in the Controller.';
@@ -112,7 +127,8 @@ async function main() {
       try {
         const result = await countIssuesByStatus(requestJira, active.jql, active.statuses);
         if (current !== generation) return;
-        showPie(result);
+        cachedResult = result;
+        render();
       } catch (error) {
         if (current !== generation) return;
         message.textContent = error.message || 'Could not load the pie chart.';
@@ -127,6 +143,7 @@ async function main() {
         statuses: Array.isArray(payload.statuses)
           ? payload.statuses.filter(status => statusKey(status?.name)) : [],
       };
+      statusFilter.setStatuses(active.statuses);
       filterName.textContent = active.name ?? '';
       void refresh();
     });

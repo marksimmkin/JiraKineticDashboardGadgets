@@ -1,6 +1,7 @@
 import { events, requestJira, router, view } from '@forge/bridge';
 import { countIssuesByStatus } from '../status-counts.mjs';
 import { issueCountButton, narrowJql, statusClause, statusesClause } from '../drilldown.mjs';
+import { createStatusFilter } from '../status-filter.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
   GADGET_REFRESH, isForDashboard, statusKey } from '../shared.mjs';
 
@@ -27,11 +28,12 @@ async function main() {
     const bars = node('div', 'status-bars');
     const message = node('p', 'status', 'Waiting for the controller…');
     message.setAttribute('role', 'status');
-    panel.append(heading, filterName, bars, message);
-    root.replaceChildren(panel);
-
     let active = null;
     let generation = 0;
+    let cachedResult = null;
+    const statusFilter = createStatusFilter(id, gadgetId(context), render);
+    panel.append(heading, filterName, statusFilter.element, bars, message);
+    root.replaceChildren(panel);
 
     function showBars(statuses, result) {
       bars.replaceChildren();
@@ -58,8 +60,35 @@ async function main() {
       }
     }
 
+    function render() {
+      bars.replaceChildren();
+      if (!cachedResult || !active) return;
+      const visible = statusFilter.visibleStatuses();
+      if (!visible.length) {
+        message.textContent = 'Select at least one status.';
+        return;
+      }
+      showBars(visible, cachedResult);
+      const shown = visible.reduce((sum, status) =>
+        sum + (cachedResult.counts[statusKey(status.name)] ?? 0), 0);
+      const configured = visible.filter(status =>
+        !shown || (cachedResult.counts[statusKey(status.name)] ?? 0) > 0).map(status => ({
+        name: status.name, ids: cachedResult.statusIds[statusKey(status.name)] ?? [],
+      }));
+      message.replaceChildren(
+        issueCountButton(router, numberFormat.format(shown),
+          narrowJql(active.jql, [statusesClause(configured)]),
+          `Open ${shown} issues in selected statuses`),
+        ' of ',
+        issueCountButton(router, numberFormat.format(cachedResult.total), active.jql,
+          `Open all ${cachedResult.total} matching issues`),
+        ' issues in selected statuses',
+      );
+    }
+
     async function refresh() {
       const current = ++generation;
+      cachedResult = null;
       bars.replaceChildren();
       if (!active?.jql) {
         filterName.textContent = '';
@@ -75,21 +104,8 @@ async function main() {
       try {
         const result = await countIssuesByStatus(requestJira, active.jql, active.statuses);
         if (current !== generation) return;
-        showBars(active.statuses, result);
-        const shown = Object.values(result.counts).reduce((sum, count) => sum + count, 0);
-        const configured = active.statuses.filter(status =>
-          !shown || (result.counts[statusKey(status.name)] ?? 0) > 0).map(status => ({
-          name: status.name, ids: result.statusIds[statusKey(status.name)] ?? [],
-        }));
-        message.replaceChildren(
-          issueCountButton(router, numberFormat.format(shown),
-            narrowJql(active.jql, [statusesClause(configured)]),
-            `Open ${shown} issues in configured statuses`),
-          ' of ',
-          issueCountButton(router, numberFormat.format(result.total), active.jql,
-            `Open all ${result.total} matching issues`),
-          ' issues in configured statuses',
-        );
+        cachedResult = result;
+        render();
       } catch (error) {
         if (current !== generation) return;
         message.textContent = error.message || 'Could not count issues by status.';
@@ -105,6 +121,7 @@ async function main() {
           ? payload.statuses.filter(status => statusKey(status?.name))
           : [],
       };
+      statusFilter.setStatuses(active.statuses);
       void refresh();
     });
     await events.on(GADGET_REFRESH, payload => {

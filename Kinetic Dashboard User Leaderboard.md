@@ -1,3 +1,5 @@
 List of users affected by the JQL which have graphical bars next to each person showing the total total weighted score on issues that are assigned to them.
 
 Treat users as assignees of issues in the selected Controller JQL, with Unassigned shown separately. For each person, sum the configured remaining-work weight of their issues' current statuses (1 means not started, 0 means complete). Sort largest remaining score first and scale graphical bars against the highest score. Show issue counts as context. If any matching status has no configured weight, list the missing statuses and withhold the ranking until they are configured.
+
+Provide a status checkbox dropdown in the gadget. Hidden statuses and their issues are excluded from scores, rankings, issue counts, and missing-weight checks. Remember the selection for this gadget in the viewer's browser; newly encountered statuses start visible.

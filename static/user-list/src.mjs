@@ -1,6 +1,7 @@
 import { events, requestJira, router, view } from '@forge/bridge';
 import { searchAllIssues, summarizeAssignees } from '../issue-data.mjs';
 import { assigneeClause, issueCountButton, narrowJql, statusClause } from '../drilldown.mjs';
+import { createStatusFilter, matchingStatusIssues, visibleIssueJql } from '../status-filter.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
   GADGET_REFRESH, isForDashboard, statusKey } from '../shared.mjs';
 
@@ -26,12 +27,15 @@ async function main() {
     const tableArea = node('div', 'dashboard-table-scroll');
     const message = node('p', 'status', 'Waiting for the controller…');
     message.setAttribute('role', 'status');
-    panel.append(heading, filterName, tableArea, message);
-    root.replaceChildren(panel);
     let active = null;
     let generation = 0;
+    let loadedIssues = null;
+    let allStatuses = [];
+    const statusFilter = createStatusFilter(id, gadgetId(context), render);
+    panel.append(heading, filterName, statusFilter.element, tableArea, message);
+    root.replaceChildren(panel);
 
-    function showTable(result) {
+    function showTable(result, visibleJql) {
       const table = node('table', 'dashboard-table user-status-table');
       const head = node('thead');
       const header = node('tr');
@@ -46,7 +50,7 @@ async function main() {
         name.scope = 'row';
         const totalCell = node('td', 'number-cell');
         totalCell.append(issueCountButton(router, numberFormat.format(row.total),
-          narrowJql(active.jql, [assigneeClause(row.id)]),
+          narrowJql(visibleJql, [assigneeClause(row.id)]),
           `Open ${row.total} issues assigned to ${row.name}`));
         tr.append(name, totalCell);
         for (const status of result.statuses) {
@@ -62,14 +66,34 @@ async function main() {
       table.append(head, body);
       tableArea.replaceChildren(table);
       message.replaceChildren(
-        issueCountButton(router, numberFormat.format(result.total), active.jql,
-          `Open all ${result.total} matching issues`),
-        ` issues across ${numberFormat.format(rows.length)} assignees, including Unassigned where applicable`,
+        issueCountButton(router, numberFormat.format(result.total), visibleJql,
+          `Open ${result.total} issues in selected statuses`),
+        ` issues in selected statuses across ${numberFormat.format(rows.length)} assignees, including Unassigned where applicable`,
       );
+    }
+
+    function render() {
+      tableArea.replaceChildren();
+      if (!loadedIssues?.length || !active) return;
+      const visible = statusFilter.visibleStatuses();
+      if (!visible.length) {
+        message.textContent = 'Select at least one status.';
+        return;
+      }
+      const selectedIssues = matchingStatusIssues(loadedIssues, visible);
+      if (!selectedIssues.length) {
+        message.textContent = 'No issues are in the selected statuses.';
+        return;
+      }
+      showTable(summarizeAssignees(selectedIssues, active.statuses),
+        visibleIssueJql(active.jql, allStatuses, visible));
     }
 
     async function refresh() {
       const current = ++generation;
+      loadedIssues = null;
+      allStatuses = [];
+      statusFilter.setStatuses([]);
       tableArea.replaceChildren();
       if (!active?.jql) {
         message.textContent = 'Choose a filter in the Controller.';
@@ -83,7 +107,10 @@ async function main() {
           message.textContent = 'No matching issues.';
           return;
         }
-        showTable(summarizeAssignees(issues, active.statuses));
+        loadedIssues = issues;
+        allStatuses = summarizeAssignees(issues, active.statuses).statuses;
+        statusFilter.setStatuses(allStatuses);
+        render();
       } catch (error) {
         if (current !== generation) return;
         message.textContent = error.message || 'Could not load the user list.';

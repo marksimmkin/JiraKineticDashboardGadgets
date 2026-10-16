@@ -1,6 +1,7 @@
 import { events, requestJira, router, view } from '@forge/bridge';
 import { searchAllIssues, summarizeAssignees } from '../issue-data.mjs';
 import { assigneeClause, issueCountButton, narrowJql } from '../drilldown.mjs';
+import { createStatusFilter, matchingStatusIssues, visibleIssueJql } from '../status-filter.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
   GADGET_REFRESH, isForDashboard, statusKey } from '../shared.mjs';
 
@@ -27,12 +28,15 @@ async function main() {
     const rows = node('div', 'leaderboard-rows');
     const message = node('p', 'status', 'Waiting for the controller…');
     message.setAttribute('role', 'status');
-    panel.append(heading, filterName, rows, message);
-    root.replaceChildren(panel);
     let active = null;
     let generation = 0;
+    let loadedIssues = null;
+    let allStatuses = [];
+    const statusFilter = createStatusFilter(id, gadgetId(context), render);
+    panel.append(heading, filterName, statusFilter.element, rows, message);
+    root.replaceChildren(panel);
 
-    function showLeaderboard(result) {
+    function showLeaderboard(result, visibleJql) {
       const ranked = result.rows.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
       const maximum = ranked.reduce((highest, row) => Math.max(highest, row.score), 1);
       for (const row of ranked) {
@@ -42,7 +46,7 @@ async function main() {
         const detail = node('span', 'leaderboard-detail');
         detail.append(`${scoreFormat.format(row.score)} remaining · `,
           issueCountButton(router, numberFormat.format(row.total),
-            narrowJql(active.jql, [assigneeClause(row.id)]),
+            narrowJql(visibleJql, [assigneeClause(row.id)]),
             `Open ${row.total} issues assigned to ${row.name}`),
           ' issues');
         const track = node('div', 'leaderboard-track');
@@ -59,14 +63,38 @@ async function main() {
         rows.append(item);
       }
       message.replaceChildren(
-        issueCountButton(router, numberFormat.format(result.total), active.jql,
-          `Open all ${result.total} matching issues`),
-        ` issues across ${numberFormat.format(ranked.length)} assignees, including Unassigned where applicable`,
+        issueCountButton(router, numberFormat.format(result.total), visibleJql,
+          `Open ${result.total} issues in selected statuses`),
+        ` issues in selected statuses across ${numberFormat.format(ranked.length)} assignees, including Unassigned where applicable`,
       );
+    }
+
+    function render() {
+      rows.replaceChildren();
+      if (!loadedIssues?.length || !active) return;
+      const visible = statusFilter.visibleStatuses();
+      if (!visible.length) {
+        message.textContent = 'Select at least one status.';
+        return;
+      }
+      const selectedIssues = matchingStatusIssues(loadedIssues, visible);
+      if (!selectedIssues.length) {
+        message.textContent = 'No issues are in the selected statuses.';
+        return;
+      }
+      const result = summarizeAssignees(selectedIssues, active.statuses);
+      if (result.unmapped.length) {
+        message.textContent = `In the Controller, use Add missing status to set weights for: ${result.unmapped.join(', ')}.`;
+        return;
+      }
+      showLeaderboard(result, visibleIssueJql(active.jql, allStatuses, visible));
     }
 
     async function refresh() {
       const current = ++generation;
+      loadedIssues = null;
+      allStatuses = [];
+      statusFilter.setStatuses([]);
       rows.replaceChildren();
       if (!active?.jql) {
         message.textContent = 'Choose a filter in the Controller.';
@@ -80,12 +108,10 @@ async function main() {
           message.textContent = 'No matching issues.';
           return;
         }
-        const result = summarizeAssignees(issues, active.statuses);
-        if (result.unmapped.length) {
-          message.textContent = `In the Controller, use Add missing status to set weights for: ${result.unmapped.join(', ')}.`;
-          return;
-        }
-        showLeaderboard(result);
+        loadedIssues = issues;
+        allStatuses = summarizeAssignees(issues, active.statuses).statuses;
+        statusFilter.setStatuses(allStatuses);
+        render();
       } catch (error) {
         if (current !== generation) return;
         message.textContent = error.message || 'Could not load the leaderboard.';

@@ -44,6 +44,15 @@ textarea.text-input { resize: vertical; min-height: 62px; }
 .status-list { display: grid; gap: 10px; margin: 12px 0; }
 .status-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .status-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, .3fr) auto; align-items: end; gap: 10px; padding: 12px; border: 1px solid var(--ds-border, #dfe1e6); border-radius: 8px; background: var(--ds-surface-raised, #f7f8f9); }
+.status-filter { margin: 0 0 12px; border: 1px solid var(--ds-border, #dfe1e6); border-radius: 6px; background: var(--ds-surface-raised, #f7f8f9); font-size: 13px; }
+.status-filter[hidden] { display: none; }
+.status-filter-summary { padding: 8px 10px; cursor: pointer; font-weight: 650; }
+.status-filter-menu { padding: 0 10px 10px; }
+.status-filter-actions { display: flex; gap: 6px; margin-bottom: 6px; }
+.status-filter-actions .button { min-height: 28px; padding: 4px 8px; font-size: 12px; }
+.status-filter-options { display: grid; gap: 4px; max-height: 180px; overflow-y: auto; }
+.status-filter-option { display: flex; align-items: center; gap: 8px; padding: 4px 2px; cursor: pointer; overflow-wrap: anywhere; }
+.status-filter-option input { margin: 0; flex: none; }
 .status-chart { padding-block: 22px; }
 .chart-filter-name { margin: 8px 0 16px; font-size: 14px; font-weight: 650; }
 .chart-filter-name:empty { display: none; }
