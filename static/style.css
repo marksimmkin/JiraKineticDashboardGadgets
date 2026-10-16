@@ -110,7 +110,7 @@ textarea.text-input { resize: vertical; min-height: 62px; }
 .burndown-summary:empty, .burndown .status:empty { display: none; }
 .status-pie, .issue-list, .user-list, .user-leaderboard { padding-block: 22px; }
 .pie-content { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 16px; width: 100%; }
-.pie-donut { position: relative; width: min(100%, 320px); aspect-ratio: 1; border-radius: 50%; }
+.pie-donut { position: relative; width: 100%; aspect-ratio: 1; border-radius: 50%; }
 .pie-center { position: absolute; inset: 24%; display: grid; place-items: center; border-radius: 50%; background: var(--ds-surface, #fff); color: var(--ds-text, #172b4d); font-size: 22px; font-weight: 750; }
 .pie-legend { display: grid; gap: 8px; min-width: 0; width: 100%; }
 .pie-legend-row { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 7px; font-size: 12px; }
