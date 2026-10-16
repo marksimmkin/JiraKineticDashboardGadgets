@@ -70,6 +70,7 @@ test('burndown uses viewer day boundaries and rejects unmapped historical status
   const result = buildBurndown(issues, changes, statuses,
     '2026-09-30', '2026-10-02', '2026-10-01', 'America/Los_Angeles');
   assert.deepEqual(result.actual, [
+    { date: '2026-09-30', remaining: 0 },
     { date: '2026-09-30', remaining: 1 },
     { date: '2026-10-01', remaining: 0 },
   ]);
@@ -77,6 +78,25 @@ test('burndown uses viewer day boundaries and rejects unmapped historical status
     '2026-09-30', '2026-10-02', '2026-10-01', 'America/Los_Angeles'), {
     kind: 'unmapped', statuses: ['To Do'],
   });
+});
+
+test('burndown shows progress made on the start date and subsequent day', () => {
+  const issues = [{ id: '1', fields: {
+    created: '2026-10-10T09:00:00Z', status: { name: 'Done' },
+  } }];
+  const changes = new Map([['1', [
+    { at: new Date('2026-10-15T12:00:00Z'), from: 'To Do', to: 'In Progress' },
+    { at: new Date('2026-10-16T12:00:00Z'), from: 'In Progress', to: 'Done' },
+  ]]]);
+  const result = buildBurndown(issues, changes, statuses,
+    '2026-10-15', '2026-10-30', '2026-10-16', 'Europe/London');
+  assert.equal(result.baseline, 1);
+  assert.equal(result.remaining, 0);
+  assert.deepEqual(result.actual, [
+    { date: '2026-10-15', remaining: 1 },
+    { date: '2026-10-15', remaining: 0.5 },
+    { date: '2026-10-16', remaining: 0 },
+  ]);
 });
 
 test('burndown starts from the status at the start date and stops at the end date', () => {

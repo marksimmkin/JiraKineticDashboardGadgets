@@ -73,7 +73,7 @@ function chartFor(data) {
     const ideal = baseline * (1 - elapsed);
     const change = index ? point.remaining - actual[index - 1].remaining : 0;
     const detail = [
-      formatDate(point.date),
+      `${formatDate(point.date)}${index === 0 ? ' · start of day' : ''}`,
       `Remaining weighted score: ${scoreFormatter.format(point.remaining)}`,
       `Ideal remaining: ${scoreFormatter.format(ideal)}`,
       `Difference: ${scoreFormatter.format(Math.abs(point.remaining - ideal))} ${point.remaining === ideal ? 'on' : point.remaining > ideal ? 'above' : 'below'} ideal`,
@@ -145,7 +145,7 @@ async function main() {
           chartArea.replaceChildren(chartFor(result));
           legend.hidden = false;
           summary.replaceChildren(
-            `${scoreFormatter.format(result.remaining)} remaining from ${scoreFormatter.format(result.baseline)} at start · `,
+            `${scoreFormatter.format(result.remaining)} remaining from ${scoreFormatter.format(result.baseline)} at the start of ${formatDate(result.startDate)} · `,
             issueCountButton(router, countFormatter.format(result.total), active.jql,
               `Open all ${result.total} matching issues`),
             ' issues in the current JQL scope',

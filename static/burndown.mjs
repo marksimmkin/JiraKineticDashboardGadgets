@@ -121,14 +121,14 @@ export function buildBurndown(issues, changes, statuses, startDate, endDate, tod
     const laterStates = new Map();
     for (const change of history) {
       const day = dayNumber(todayInTimezone(timezone, change.at));
-      if (day <= start) state = change.to;
+      if (day < start) state = change.to;
       else if (day <= lastObserved) laterStates.set(day, change.to);
     }
 
-    let previous = created <= start ? score(state) : 0;
+    let previous = created < start ? score(state) : 0;
     baseline += previous;
     const eventDays = new Set(laterStates.keys());
-    if (created > start && created <= lastObserved) eventDays.add(created);
+    if (created >= start && created <= lastObserved) eventDays.add(created);
     for (const day of [...eventDays].sort((a, b) => a - b)) {
       if (laterStates.has(day)) state = laterStates.get(day);
       const next = day >= created ? score(state) : 0;
