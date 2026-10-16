@@ -3,11 +3,9 @@ import { countIssuesByStatus } from '../status-counts.mjs';
 import { issueCountButton, narrowJql, statusClause, statusesClause } from '../drilldown.mjs';
 import { createStatusFilter } from '../status-filter.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
-  GADGET_REFRESH, isForDashboard, statusKey } from '../shared.mjs';
+  GADGET_REFRESH, isForDashboard, STATUS_COLORS, statusKey, validStatusColor } from '../shared.mjs';
 
 const root = document.getElementById('app');
-const colors = ['#0c66e4', '#7f5fcb', '#22a06b', '#e2b203', '#e2483d', '#42b2d7',
-  '#b65c9c', '#f38a3f', '#6b778c', '#9f8fef', '#80b655', '#d96c77'];
 const numberFormat = new Intl.NumberFormat();
 const percentFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 
@@ -42,7 +40,7 @@ async function main() {
         name: status.name,
         count: result.counts[statusKey(status.name)] ?? 0,
         ids: result.statusIds[statusKey(status.name)] ?? [],
-        color: colors[index % colors.length],
+        color: validStatusColor(status.color) ? status.color : STATUS_COLORS[index % STATUS_COLORS.length],
       }));
       const shown = slices.reduce((sum, slice) => sum + slice.count, 0);
       if (!shown) {

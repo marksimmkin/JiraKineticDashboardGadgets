@@ -2,11 +2,11 @@ import { events, requestJira, router, view } from '@forge/bridge';
 import { searchAllIssues, summarizeAssignees } from '../issue-data.mjs';
 import { assigneeClause, issueCountButton, narrowJql } from '../drilldown.mjs';
 import { createStatusFilter, matchingStatusIssues, visibleIssueJql } from '../status-filter.mjs';
+import { createUserMetricSelect, formatMetric, metricLabel, metricValue } from '../user-metrics.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
   GADGET_REFRESH, isForDashboard, statusKey } from '../shared.mjs';
 
 const root = document.getElementById('app');
-const scoreFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const numberFormat = new Intl.NumberFormat();
 
 function node(tag, className, text) {
@@ -33,30 +33,40 @@ async function main() {
     let loadedIssues = null;
     let allStatuses = [];
     const statusFilter = createStatusFilter(id, gadgetId(context), render);
-    panel.append(heading, filterName, statusFilter.element, rows, message);
+    const metricSelect = createUserMetricSelect(id, gadgetId(context), render, 'score');
+    panel.append(heading, filterName, statusFilter.element, metricSelect.element, rows, message);
     root.replaceChildren(panel);
 
     function showLeaderboard(result, visibleJql) {
-      const ranked = result.rows.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
-      const maximum = ranked.reduce((highest, row) => Math.max(highest, row.score), 1);
+      const metric = metricSelect.selected();
+      const ranked = result.rows.sort((a, b) => metricValue(b, metric) - metricValue(a, metric) || a.name.localeCompare(b.name));
+      const maximum = ranked.reduce((highest, row) => Math.max(highest, metricValue(row, metric)), 1);
       for (const row of ranked) {
         const item = node('div', 'leaderboard-row');
         const line = node('div', 'leaderboard-line');
         const name = node('span', 'leaderboard-name', row.name);
         const detail = node('span', 'leaderboard-detail');
-        detail.append(`${scoreFormat.format(row.score)} remaining · `,
-          issueCountButton(router, numberFormat.format(row.total),
-            narrowJql(visibleJql, [assigneeClause(row.id)]),
-            `Open ${row.total} issues assigned to ${row.name}`),
-          ' issues');
+        if (metric === 'tickets') detail.append(issueCountButton(router, formatMetric(row.total, metric),
+          narrowJql(visibleJql, [assigneeClause(row.id)]),
+          `Open ${row.total} issues assigned to ${row.name}`), ' tickets');
+        else {
+          detail.append(`${formatMetric(metricValue(row, metric), metric)} ${metric === 'time' ? 'remaining' : 'weighted score'} · `,
+            issueCountButton(router, numberFormat.format(row.total),
+              narrowJql(visibleJql, [assigneeClause(row.id)]),
+              `Open ${row.total} issues assigned to ${row.name}`),
+            ' tickets');
+        }
+        if (metric === 'time' && row.estimatedIssues < row.total) {
+          detail.title = `Remaining estimate set on ${row.estimatedIssues} of ${row.total} issues`;
+        }
         const track = node('div', 'leaderboard-track');
         const fill = node('div', 'leaderboard-fill');
-        fill.style.width = `${row.score / maximum * 100}%`;
+        fill.style.width = `${metricValue(row, metric) / maximum * 100}%`;
         track.setAttribute('role', 'meter');
-        track.setAttribute('aria-label', `${row.name} weighted remaining score`);
+        track.setAttribute('aria-label', `${row.name} ${metricLabel(metric)}`);
         track.setAttribute('aria-valuemin', '0');
         track.setAttribute('aria-valuemax', String(maximum));
-        track.setAttribute('aria-valuenow', String(row.score));
+        track.setAttribute('aria-valuenow', String(metricValue(row, metric)));
         track.append(fill);
         line.append(name, detail);
         item.append(line, track);
@@ -83,7 +93,7 @@ async function main() {
         return;
       }
       const result = summarizeAssignees(selectedIssues, active.statuses);
-      if (result.unmapped.length) {
+      if (metricSelect.selected() === 'score' && result.unmapped.length) {
         message.textContent = `In the Controller, use Add missing status to set weights for: ${result.unmapped.join(', ')}.`;
         return;
       }
@@ -100,9 +110,9 @@ async function main() {
         message.textContent = 'Choose a filter in the Controller.';
         return;
       }
-      message.textContent = 'Calculating weighted scores…';
+      message.textContent = 'Calculating totals…';
       try {
-        const issues = await searchAllIssues(requestJira, active.jql, ['assignee', 'status']);
+        const issues = await searchAllIssues(requestJira, active.jql, ['assignee', 'status', 'timetracking']);
         if (current !== generation) return;
         if (!issues.length) {
           message.textContent = 'No matching issues.';

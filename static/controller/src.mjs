@@ -1,6 +1,6 @@
 import { events, requestJira, view } from '@forge/bridge';
 import { configuredFilters, configuredStatuses, dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
-  GADGET_REFRESH, isForDashboard, selectedFilterPayload, statusKey, validateFilters, validateStatuses } from '../shared.mjs';
+  GADGET_REFRESH, isForDashboard, selectedFilterPayload, STATUS_COLORS, statusKey, validateFilters, validateStatuses } from '../shared.mjs';
 
 const root = document.getElementById('app');
 
@@ -34,7 +34,7 @@ async function edit(context) {
   const filtersHeading = element('h2', 'config-heading', 'Filters');
   const rows = element('div', 'filter-list');
   const statusesHeading = element('h2', 'config-heading', 'Statuses');
-  const statusHelp = element('p', 'muted', 'Choose Jira statuses or enter a missing status name exactly as a gadget shows it. Statuses with the same name are counted together. Weights are used by the progress, burndown, and leaderboard gadgets.');
+  const statusHelp = element('p', 'muted', 'Choose Jira statuses or enter a missing status name exactly as a gadget shows it. Statuses with the same name are counted together. Weights are used by the progress, burndown, and leaderboard gadgets. Colours are used by the pie chart.');
   const statusRows = element('div', 'status-list');
   const statusWarning = element('p', 'muted', statusLoadError);
   const error = element('p', 'error');
@@ -55,6 +55,24 @@ async function edit(context) {
   form.append(intro, filtersHeading, rows, add, statusesHeading, statusHelp,
     statusRows, statusActions, statusWarning, error, actions);
   root.replaceChildren(form);
+
+  function orderButtons(row, container, label) {
+    const controls = element('div', 'order-actions');
+    const up = element('button', 'button secondary', '↑');
+    up.type = 'button';
+    up.setAttribute('aria-label', `Move ${label} up`);
+    up.addEventListener('click', () => {
+      if (row.previousElementSibling) container.insertBefore(row, row.previousElementSibling);
+    });
+    const down = element('button', 'button secondary', '↓');
+    down.type = 'button';
+    down.setAttribute('aria-label', `Move ${label} down`);
+    down.addEventListener('click', () => {
+      if (row.nextElementSibling) container.insertBefore(row.nextElementSibling, row);
+    });
+    controls.append(up, down);
+    return controls;
+  }
 
   function addRow(filter = { name: '', jql: '', startDate: null, endDate: null }) {
     const row = element('div', 'filter-row');
@@ -86,7 +104,9 @@ async function edit(context) {
     const remove = element('button', 'button subtle', 'Remove');
     remove.type = 'button';
     remove.addEventListener('click', () => row.remove());
-    row.append(nameLabel, jqlLabel, dates, remove);
+    const actions = element('div', 'row-actions');
+    actions.append(orderButtons(row, rows, 'filter'), remove);
+    row.append(nameLabel, jqlLabel, dates, actions);
     rows.append(row);
   }
 
@@ -128,10 +148,17 @@ async function edit(context) {
     weight.required = true;
     weight.value = Number.isFinite(status.weight) ? String(status.weight) : '';
     weightLabel.append(weight);
+    const colorLabel = element('label', 'field-label', 'Pie colour');
+    const color = element('input', 'status-color');
+    color.type = 'color';
+    color.value = status.color ?? STATUS_COLORS[statusRows.children.length % STATUS_COLORS.length];
+    colorLabel.append(color);
     const remove = element('button', 'button subtle', 'Remove');
     remove.type = 'button';
     remove.addEventListener('click', () => row.remove());
-    row.append(statusLabel, weightLabel, remove);
+    const actions = element('div', 'row-actions');
+    actions.append(orderButtons(row, statusRows, 'status'), remove);
+    row.append(statusLabel, weightLabel, colorLabel, actions);
     statusRows.append(row);
   }
   savedStatuses.forEach(status => addStatusRow(status, !statusOptions.has(statusKey(status.name))));
@@ -151,6 +178,7 @@ async function edit(context) {
       return {
         name: row.querySelector('.status-name-input')?.value.trim() ?? statusOptions.get(key)?.name ?? '',
         weight: Number.parseFloat(row.querySelector('.status-weight').value),
+        color: row.querySelector('.status-color').value,
       };
     });
     error.textContent = validateFilters(next) || validateStatuses(nextStatuses);
@@ -169,13 +197,11 @@ async function display(context) {
   const id = dashboardId(context);
   const filters = configuredFilters(context);
   const panel = element('section', 'panel controller');
-  const label = element('label', 'field-label', 'Active filter');
-  const select = element('select', 'text-input');
-  const summary = element('p', 'muted');
-  const dates = element('p', 'muted date-summary');
+  const choices = element('div', 'controller-filter-buttons');
+  choices.setAttribute('role', 'group');
+  choices.setAttribute('aria-label', 'Active filter');
   const status = element('p', 'status');
-  label.append(select);
-  panel.append(label, summary, dates, status);
+  panel.append(choices, status);
   root.replaceChildren(panel);
 
   if (!id) {
@@ -183,27 +209,28 @@ async function display(context) {
     return;
   }
   if (!filters.length) {
-    select.disabled = true;
     status.textContent = 'Use the gadget menu to configure a filter.';
   } else {
     filters.forEach((filter, index) => {
-      const option = element('option', '', filter.name);
-      option.value = String(index);
-      select.append(option);
+      const button = element('button', 'button secondary controller-filter-button', filter.name);
+      button.type = 'button';
+      button.addEventListener('click', () => {
+        selectedIndex = index;
+        announce().catch(() => { status.textContent = 'Could not update the other gadgets.'; });
+      });
+      choices.append(button);
     });
   }
 
+  let selectedIndex = 0;
   async function announce() {
-    const filter = filters[Number(select.value)] ?? null;
-    summary.textContent = filter ? filter.jql : '';
-    dates.textContent = filter
-      ? [filter.startDate && `Start: ${filter.startDate}`, filter.endDate && `End: ${filter.endDate}`].filter(Boolean).join(' · ')
-      : '';
+    const filter = filters[selectedIndex] ?? null;
+    [...choices.children].forEach((button, index) => {
+      button.classList.toggle('is-active', index === selectedIndex);
+      button.setAttribute('aria-pressed', String(index === selectedIndex));
+    });
     await events.emit(FILTER_SELECTED, selectedFilterPayload(context, filter));
   }
-  select.addEventListener('change', () => {
-    announce().catch(() => { status.textContent = 'Could not update the other gadgets.'; });
-  });
   await events.on(FILTER_REQUEST, payload => {
     if (isForDashboard(payload, id)) return announce();
   });

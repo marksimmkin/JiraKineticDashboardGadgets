@@ -95,3 +95,6 @@ resources:
 permissions:
   scopes:
     - read:jira-work
+  external:
+    images:
+      - address: https://*.atlassian.net

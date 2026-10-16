@@ -1,5 +1,5 @@
 import { events, requestJira, router, view } from '@forge/bridge';
-import { configuredColumns, formatIssueField, searchIssuePage } from '../issue-data.mjs';
+import { configuredColumns, formatIssueField, orderedJql, searchIssuePage } from '../issue-data.mjs';
 import { issueCountButton } from '../drilldown.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
   GADGET_REFRESH, isForDashboard } from '../shared.mjs';
@@ -53,7 +53,7 @@ async function edit(context) {
 
   const form = node('form', 'panel issue-list-edit');
   const heading = node('h2', 'config-heading', 'Issue list columns');
-  const help = node('p', 'muted', 'Choose up to 10 columns and arrange their order. The list follows the selected JQL order and loads 50 issues at a time.');
+  const help = node('p', 'muted', 'Choose up to 10 columns and arrange their order. Click a heading in the list to sort all matching issues. The list loads 50 issues at a time.');
   const rows = node('div', 'column-list');
   const add = node('button', 'button secondary', 'Add column');
   add.type = 'button';
@@ -136,7 +136,21 @@ async function display(context) {
   const table = node('table', 'dashboard-table');
   const head = node('thead');
   const header = node('tr');
-  for (const column of columns) header.append(node('th', '', labels.get(column) ?? column));
+  const sortButtons = new Map();
+  for (const column of columns) {
+    const cell = node('th');
+    cell.scope = 'col';
+    const button = node('button', 'table-sort-button', labels.get(column) ?? column);
+    button.type = 'button';
+    button.addEventListener('click', () => {
+      sort = { field: column, direction: sort?.field === column && sort.direction === 'ASC' ? 'DESC' : 'ASC' };
+      updateSortHeadings();
+      refresh();
+    });
+    sortButtons.set(column, { cell, button });
+    cell.append(button);
+    header.append(cell);
+  }
   head.append(header);
   const body = node('tbody');
   table.append(head, body);
@@ -154,17 +168,54 @@ async function display(context) {
   let nextPageToken;
   let loaded = 0;
   let loading = false;
+  let sort = null;
   const visited = new Set();
   const fields = columns.filter(column => column !== 'key');
+
+  function updateSortHeadings() {
+    for (const [column, { cell, button }] of sortButtons) {
+      cell.setAttribute('aria-sort', sort?.field === column
+        ? sort.direction === 'ASC' ? 'ascending' : 'descending' : 'none');
+      button.textContent = `${labels.get(column) ?? column}${sort?.field === column ? sort.direction === 'ASC' ? ' ↑' : ' ↓' : ''}`;
+      button.title = `Sort ${labels.get(column) ?? column} ${sort?.field === column && sort.direction === 'ASC' ? 'descending' : 'ascending'}`;
+    }
+  }
+  updateSortHeadings();
+
+  function priorityIcon(priority) {
+    if (!priority?.iconUrl) return node('span', '', formatIssueField(priority));
+    try {
+      const url = new URL(priority.iconUrl, context.siteUrl);
+      if (url.protocol !== 'https:' || !url.hostname.endsWith('.atlassian.net')) throw new Error();
+      const icon = node('img', 'issue-priority-icon');
+      icon.src = url.href;
+      icon.alt = priority.name ?? 'Priority';
+      icon.title = priority.name ?? 'Priority';
+      return icon;
+    } catch { return node('span', '', formatIssueField(priority)); }
+  }
+
+  function statusLozenge(status) {
+    const badge = node('span', 'issue-status-lozenge', status?.name ?? '—');
+    const category = String(status?.statusCategory?.key ?? '').toLowerCase();
+    badge.classList.add(category === 'done' ? 'is-done' : category === 'indeterminate' ? 'is-progress' : 'is-new');
+    return badge;
+  }
 
   function appendIssues(issues) {
     for (const issue of issues) {
       const row = node('tr');
       for (const column of columns) {
-        const value = column === 'key' ? issue.key
-          : column === 'assignee' && !issue.fields?.assignee ? 'Unassigned'
-            : formatIssueField(issue.fields?.[column]);
-        row.append(node('td', '', value || '—'));
+        const cell = node('td');
+        if (column === 'priority') cell.append(priorityIcon(issue.fields?.priority));
+        else if (column === 'status') cell.append(statusLozenge(issue.fields?.status));
+        else {
+          const value = column === 'key' ? issue.key
+            : column === 'assignee' && !issue.fields?.assignee ? 'Unassigned'
+              : formatIssueField(issue.fields?.[column]);
+          cell.textContent = value || '—';
+        }
+        row.append(cell);
       }
       body.append(row);
     }
@@ -177,7 +228,8 @@ async function display(context) {
     more.disabled = true;
     message.textContent = 'Loading matching issues…';
     try {
-      const page = await searchIssuePage(requestJira, active.jql, fields, nextPageToken, 50);
+      const query = sort ? orderedJql(active.jql, sort.field, sort.direction) : active.jql;
+      const page = await searchIssuePage(requestJira, query, fields, nextPageToken, 50);
       if (current !== generation) return;
       appendIssues(page.issues);
       loaded += page.issues.length;

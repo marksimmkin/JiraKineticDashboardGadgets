@@ -31,11 +31,13 @@ test('saved filters are normalized and invalid entries are ignored', () => {
   assert.deepEqual(selectedFilterPayload(selectedContext, configuredFilters(context)[0]), {
     dashboardId: '12', controllerId: '7', name: 'Release', jql: 'project = GAME',
     startDate: '2026-01-01', endDate: '2026-03-31',
-    statuses: [{ name: 'In Progress', weight: 0.5 }],
+    statuses: [{ name: 'In Progress', weight: 0.5, color: '#0c66e4' }],
   });
   assert.deepEqual(configuredStatuses({ extension: { gadgetConfiguration: {} } }), []);
   assert.equal(statusKey(' To Do '), 'to do');
   assert.equal(validateStatuses([{ name: 'In Progress', weight: 0.5 }]), '');
+  assert.equal(validateStatuses([{ name: 'Done', weight: 0, color: '#00aa22' }]), '');
+  assert.equal(validateStatuses([{ name: 'Done', weight: 0, color: 'red' }]), 'Choose a valid status colour.');
   assert.equal(validateStatuses([{ name: '   ', weight: 0.5 }]), 'Enter or choose a Jira status for each row.');
   assert.equal(validateStatuses([{ name: 'To Do', weight: 0 }, { name: 'to do', weight: 1 }]), 'Each Jira status name can be added only once.');
   assert.equal(validateStatuses([{ name: 'Legacy Review', weight: 0 }, { name: ' legacy review ', weight: 1 }]), 'Each Jira status name can be added only once.');

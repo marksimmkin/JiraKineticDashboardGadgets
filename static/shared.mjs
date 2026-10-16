@@ -1,6 +1,12 @@
 export const FILTER_REQUEST = 'kinetic.dashboard.filter.request';
 export const FILTER_SELECTED = 'kinetic.dashboard.filter.selected';
 export const GADGET_REFRESH = 'JIRA_DASHBOARD_GADGET_REFRESH';
+export const STATUS_COLORS = ['#0c66e4', '#7f5fcb', '#22a06b', '#e2b203', '#e2483d', '#42b2d7',
+  '#b65c9c', '#f38a3f', '#6b778c', '#9f8fef', '#80b655', '#d96c77'];
+
+export function validStatusColor(color) {
+  return typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color);
+}
 
 export function dashboardId(context) {
   return String(context?.extension?.dashboard?.id ?? '');
@@ -46,7 +52,8 @@ export function configuredStatuses(context) {
     const key = statusKey(status?.name);
     if (!key || unique.has(key) || typeof status.weight !== 'number' ||
       !Number.isFinite(status.weight) || status.weight < 0 || status.weight > 1) continue;
-    unique.set(key, { name: status.name.trim(), weight: status.weight });
+    unique.set(key, { name: status.name.trim(), weight: status.weight,
+      color: validStatusColor(status.color) ? status.color : STATUS_COLORS[unique.size % STATUS_COLORS.length] });
   }
   return [...unique.values()];
 }
@@ -79,6 +86,7 @@ export function validateStatuses(statuses) {
     if (!Number.isFinite(status.weight) || status.weight < 0 || status.weight > 1) {
       return 'Each status weight must be between 0 and 1.';
     }
+    if (status.color !== undefined && !validStatusColor(status.color)) return 'Choose a valid status colour.';
     names.add(key);
   }
   return '';

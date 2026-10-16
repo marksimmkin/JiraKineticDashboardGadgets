@@ -2,6 +2,7 @@ import { events, requestJira, router, view } from '@forge/bridge';
 import { searchAllIssues, summarizeAssignees } from '../issue-data.mjs';
 import { assigneeClause, issueCountButton, narrowJql, statusClause } from '../drilldown.mjs';
 import { createStatusFilter, matchingStatusIssues, visibleIssueJql } from '../status-filter.mjs';
+import { createUserMetricSelect, formatMetric, metricLabel, metricValue } from '../user-metrics.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
   GADGET_REFRESH, isForDashboard, statusKey } from '../shared.mjs';
 
@@ -32,26 +33,32 @@ async function main() {
     let loadedIssues = null;
     let allStatuses = [];
     const statusFilter = createStatusFilter(id, gadgetId(context), render);
-    panel.append(heading, filterName, statusFilter.element, tableArea, message);
+    const metricSelect = createUserMetricSelect(id, gadgetId(context), render);
+    panel.append(heading, filterName, statusFilter.element, metricSelect.element, tableArea, message);
     root.replaceChildren(panel);
 
     function showTable(result, visibleJql) {
+      const metric = metricSelect.selected();
       const table = node('table', 'dashboard-table user-status-table');
       const head = node('thead');
       const header = node('tr');
-      header.append(node('th', '', 'Assignee'), node('th', 'number-cell', 'Total'));
+      header.append(node('th', '', 'Assignee'), node('th', 'number-cell', metricLabel(metric)));
       for (const status of result.statuses) header.append(node('th', 'number-cell', status.name));
       head.append(header);
       const body = node('tbody');
-      const rows = result.rows.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+      const rows = result.rows.sort((a, b) => metricValue(b, metric) - metricValue(a, metric) || a.name.localeCompare(b.name));
       for (const row of rows) {
         const tr = node('tr');
         const name = node('th', '', row.name);
         name.scope = 'row';
         const totalCell = node('td', 'number-cell');
-        totalCell.append(issueCountButton(router, numberFormat.format(row.total),
+        if (metric === 'tickets') totalCell.append(issueCountButton(router, formatMetric(row.total, metric),
           narrowJql(visibleJql, [assigneeClause(row.id)]),
           `Open ${row.total} issues assigned to ${row.name}`));
+        else totalCell.textContent = formatMetric(metricValue(row, metric), metric);
+        if (metric === 'time' && row.estimatedIssues < row.total) {
+          totalCell.title = `Remaining estimate set on ${row.estimatedIssues} of ${row.total} issues`;
+        }
         tr.append(name, totalCell);
         for (const status of result.statuses) {
           const count = row.counts[status.key] ?? 0;
@@ -85,8 +92,12 @@ async function main() {
         message.textContent = 'No issues are in the selected statuses.';
         return;
       }
-      showTable(summarizeAssignees(selectedIssues, active.statuses),
-        visibleIssueJql(active.jql, allStatuses, visible));
+      const result = summarizeAssignees(selectedIssues, active.statuses);
+      if (metricSelect.selected() === 'score' && result.unmapped.length) {
+        message.textContent = `In the Controller, use Add missing status to set weights for: ${result.unmapped.join(', ')}.`;
+        return;
+      }
+      showTable(result, visibleIssueJql(active.jql, allStatuses, visible));
     }
 
     async function refresh() {
@@ -101,7 +112,7 @@ async function main() {
       }
       message.textContent = 'Counting issues by assignee…';
       try {
-        const issues = await searchAllIssues(requestJira, active.jql, ['assignee', 'status']);
+        const issues = await searchAllIssues(requestJira, active.jql, ['assignee', 'status', 'timetracking']);
         if (current !== generation) return;
         if (!issues.length) {
           message.textContent = 'No matching issues.';

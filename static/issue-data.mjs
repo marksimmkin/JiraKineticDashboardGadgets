@@ -2,6 +2,31 @@ import { statusKey } from './shared.mjs';
 
 export const DEFAULT_COLUMNS = ['key', 'summary', 'status', 'assignee'];
 
+export function orderedJql(jql, field, direction) {
+  if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(field) || !['ASC', 'DESC'].includes(direction)) {
+    throw new Error('Invalid issue sort.');
+  }
+  let quote = '';
+  let depth = 0;
+  let orderAt = -1;
+  for (let index = 0; index < jql.length; index += 1) {
+    const char = jql[index];
+    if (quote) {
+      if (char === '\\') index += 1;
+      else if (char === quote) quote = '';
+    } else if (char === '"' || char === "'") quote = char;
+    else if (char === '(') depth += 1;
+    else if (char === ')') depth = Math.max(0, depth - 1);
+    else if (depth === 0 && /\s/i.test(char) && /^\s+ORDER\s+BY\s+/i.test(jql.slice(index))) {
+      orderAt = index;
+      break;
+    }
+  }
+  const base = (orderAt < 0 ? jql : jql.slice(0, orderAt)).trim();
+  const fieldName = /^customfield_(\d+)$/.test(field) ? `cf[${field.slice(12)}]` : field;
+  return `${base} ORDER BY ${fieldName} ${direction}`;
+}
+
 export function configuredColumns(context) {
   const saved = context?.extension?.gadgetConfiguration?.columns;
   if (!Array.isArray(saved)) return DEFAULT_COLUMNS;
@@ -62,8 +87,14 @@ export function summarizeAssignees(issues, statuses) {
       ids.add(String(statusId));
       statusIds.set(key, ids);
     }
-    const row = rows.get(id) ?? { id, name, total: 0, counts: Object.create(null), score: 0 };
+    const row = rows.get(id) ?? { id, name, total: 0, counts: Object.create(null), score: 0,
+      timeRemaining: 0, estimatedIssues: 0 };
     row.total += 1;
+    const estimate = issue?.fields?.timetracking?.remainingEstimateSeconds ?? issue?.fields?.timeestimate;
+    if (typeof estimate === 'number' && Number.isFinite(estimate) && estimate >= 0) {
+      row.timeRemaining += estimate;
+      row.estimatedIssues += 1;
+    }
     row.counts[key] = (row.counts[key] ?? 0) + 1;
     if (weights.has(key)) row.score += weights.get(key);
     else missing.add(statusName);

@@ -67,13 +67,24 @@ function chartFor(data) {
   let path = `M ${x(actual[0].date)} ${y(actual[0].remaining)}`;
   for (const point of actual.slice(1)) path += ` H ${x(point.date)} V ${y(point.remaining)}`;
   svg.append(svgNode('path', { class: 'burndown-actual', d: path }));
-  for (const point of actual) {
-    const circle = svgNode('circle', {
-      class: 'burndown-point', cx: x(point.date), cy: y(point.remaining), r: 3.5,
-    });
-    circle.append(svgNode('title', {}, `${formatDate(point.date)}: ${scoreFormatter.format(point.remaining)} remaining`));
-    svg.append(circle);
-  }
+  actual.forEach((point, index) => {
+    const elapsed = Math.max(0, Math.min(1,
+      (Date.parse(`${point.date}T00:00:00Z`) / 86400000 - startDay) / span));
+    const ideal = baseline * (1 - elapsed);
+    const change = index ? point.remaining - actual[index - 1].remaining : 0;
+    const detail = [
+      formatDate(point.date),
+      `Remaining weighted score: ${scoreFormatter.format(point.remaining)}`,
+      `Ideal remaining: ${scoreFormatter.format(ideal)}`,
+      `Difference: ${scoreFormatter.format(Math.abs(point.remaining - ideal))} ${point.remaining === ideal ? 'on' : point.remaining > ideal ? 'above' : 'below'} ideal`,
+      ...(index ? [`Change since previous point: ${change > 0 ? '+' : ''}${scoreFormatter.format(change)}`] : []),
+    ].join('\n');
+    const marker = svgNode('g', { class: 'burndown-marker', tabindex: '0', role: 'img', 'aria-label': detail.replaceAll('\n', '. ') });
+    marker.append(svgNode('title', {}, detail),
+      svgNode('circle', { class: 'burndown-point', cx: x(point.date), cy: y(point.remaining), r: 4 }),
+      svgNode('circle', { class: 'burndown-point-hit', cx: x(point.date), cy: y(point.remaining), r: 12 }));
+    svg.append(marker);
+  });
   return svg;
 }
 
