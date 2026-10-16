@@ -127,7 +127,7 @@ async function main() {
         const result = buildBurndown(issues, changes, active.statuses,
           active.startDate, active.endDate, today, context.timezone);
         if (result.kind === 'unmapped') {
-          message.textContent = `Set weights in the Controller for: ${result.statuses.join(', ')}.`;
+          message.textContent = `In the Controller, use Add missing status to set weights for: ${result.statuses.join(', ')}.`;
         } else if (result.kind === 'empty') {
           message.textContent = 'No matching issues.';
         } else if (result.kind === 'ready') {

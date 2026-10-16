@@ -36,8 +36,11 @@ test('saved filters are normalized and invalid entries are ignored', () => {
   assert.deepEqual(configuredStatuses({ extension: { gadgetConfiguration: {} } }), []);
   assert.equal(statusKey(' To Do '), 'to do');
   assert.equal(validateStatuses([{ name: 'In Progress', weight: 0.5 }]), '');
+  assert.equal(validateStatuses([{ name: '   ', weight: 0.5 }]), 'Enter or choose a Jira status for each row.');
   assert.equal(validateStatuses([{ name: 'To Do', weight: 0 }, { name: 'to do', weight: 1 }]), 'Each Jira status name can be added only once.');
+  assert.equal(validateStatuses([{ name: 'Legacy Review', weight: 0 }, { name: ' legacy review ', weight: 1 }]), 'Each Jira status name can be added only once.');
   assert.equal(validateStatuses([{ name: 'Done', weight: 1.1 }]), 'Each status weight must be between 0 and 1.');
+  assert.equal(validateStatuses([{ name: 'Legacy Review', weight: Number.NaN }]), 'Each status weight must be between 0 and 1.');
 });
 
 test('counter follows enhanced search pagination and counts all issues', async () => {
@@ -113,4 +116,22 @@ test('weighted work progresses from 1 to 0 and blocks missing weights', () => {
   assert.deepEqual(weightedProgress({
     counts: { 'to do': 1 }, total: 2, unmapped: [{ name: 'Review', count: 1 }],
   }, statuses), { kind: 'unmapped', statuses: [{ name: 'Review', count: 1 }] });
+});
+
+test('a saved missing status name resolves current issue weights', async () => {
+  const context = { extension: { gadgetConfiguration: { statuses: [
+    { name: 'Legacy Review', weight: 0.25 }, { name: 'Done', weight: 0 },
+  ] } } };
+  const statuses = configuredStatuses(context);
+  const request = async () => ({ ok: true, json: async () => ({
+    issues: [
+      { fields: { status: { id: '123', name: 'legacy review' } } },
+      { fields: { status: { id: '456', name: 'Done' } } },
+    ], isLast: true,
+  }) });
+  const result = await countIssuesByStatus(request, 'project = GAME', statuses);
+  assert.deepEqual(result.unmapped, []);
+  assert.deepEqual(weightedProgress(result, statuses), {
+    kind: 'ready', fraction: 0.875, remaining: 0.25, total: 2,
+  });
 });

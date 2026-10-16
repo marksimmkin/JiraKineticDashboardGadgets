@@ -23,9 +23,9 @@ async function edit(context) {
     jiraStatuses = results.filter(status => statusKey(status?.name))
       .map(status => ({ name: String(status.name).trim() }));
   } catch {
-    statusLoadError = 'Could not load Jira statuses. Saved statuses can still be edited.';
+    statusLoadError = 'Could not load Jira statuses. Saved statuses and missing names can still be edited.';
   }
-  const statusOptions = new Map([...savedStatuses, ...jiraStatuses].map(status => [statusKey(status.name), status]));
+  const statusOptions = new Map(jiraStatuses.map(status => [statusKey(status.name), status]));
   const sortedOptions = [...statusOptions.values()].sort((a, b) =>
     a.name.localeCompare(b.name));
 
@@ -34,7 +34,7 @@ async function edit(context) {
   const filtersHeading = element('h2', 'config-heading', 'Filters');
   const rows = element('div', 'filter-list');
   const statusesHeading = element('h2', 'config-heading', 'Statuses');
-  const statusHelp = element('p', 'muted', 'Choose Jira status names for the Status Bar and Pie Charts. Statuses with the same name are counted together. Weights are used by the progress, burndown, and leaderboard gadgets.');
+  const statusHelp = element('p', 'muted', 'Choose Jira statuses or enter a missing status name exactly as a gadget shows it. Statuses with the same name are counted together. Weights are used by the progress, burndown, and leaderboard gadgets.');
   const statusRows = element('div', 'status-list');
   const statusWarning = element('p', 'muted', statusLoadError);
   const error = element('p', 'error');
@@ -44,12 +44,16 @@ async function edit(context) {
   const addStatus = element('button', 'button secondary', 'Add status');
   addStatus.type = 'button';
   addStatus.disabled = jiraStatuses.length === 0;
+  const addMissingStatus = element('button', 'button secondary', 'Add missing status');
+  addMissingStatus.type = 'button';
+  const statusActions = element('div', 'status-actions');
+  statusActions.append(addStatus, addMissingStatus);
   const save = element('button', 'button primary', 'Save filters and statuses');
   save.type = 'submit';
   const actions = element('div', 'actions');
   actions.append(save);
   form.append(intro, filtersHeading, rows, add, statusesHeading, statusHelp,
-    statusRows, addStatus, statusWarning, error, actions);
+    statusRows, statusActions, statusWarning, error, actions);
   root.replaceChildren(form);
 
   function addRow(filter = { name: '', jql: '', startDate: null, endDate: null }) {
@@ -90,21 +94,31 @@ async function edit(context) {
   (filters.length ? filters : [{ name: '', jql: '' }]).forEach(addRow);
   add.addEventListener('click', () => addRow());
 
-  function addStatusRow(status = { name: '', weight: 1 }) {
+  function addStatusRow(status = { name: '', weight: 1 }, manual = false) {
     const row = element('div', 'status-row');
-    const statusLabel = element('label', 'field-label', 'Jira status');
-    const select = element('select', 'text-input status-select');
-    const placeholder = element('option', '', 'Choose a status');
-    placeholder.value = '';
-    select.append(placeholder);
-    for (const optionStatus of sortedOptions) {
-      const option = element('option', '', optionStatus.name);
-      option.value = statusKey(optionStatus.name);
-      select.append(option);
+    const statusLabel = element('label', 'field-label', manual ? 'Missing status name' : 'Jira status');
+    if (manual) {
+      const name = element('input', 'text-input status-name-input');
+      name.type = 'text';
+      name.required = true;
+      name.maxLength = 255;
+      name.placeholder = 'Exact name shown by the gadget';
+      name.value = status.name;
+      statusLabel.append(name);
+    } else {
+      const select = element('select', 'text-input status-select');
+      const placeholder = element('option', '', 'Choose a status');
+      placeholder.value = '';
+      select.append(placeholder);
+      for (const optionStatus of sortedOptions) {
+        const option = element('option', '', optionStatus.name);
+        option.value = statusKey(optionStatus.name);
+        select.append(option);
+      }
+      select.value = statusKey(status.name);
+      select.required = true;
+      statusLabel.append(select);
     }
-    select.value = statusKey(status.name);
-    select.required = true;
-    statusLabel.append(select);
     const weightLabel = element('label', 'field-label', 'Weight (0–1)');
     const weight = element('input', 'text-input status-weight');
     weight.type = 'number';
@@ -112,7 +126,7 @@ async function edit(context) {
     weight.max = '1';
     weight.step = 'any';
     weight.required = true;
-    weight.value = String(status.weight);
+    weight.value = Number.isFinite(status.weight) ? String(status.weight) : '';
     weightLabel.append(weight);
     const remove = element('button', 'button subtle', 'Remove');
     remove.type = 'button';
@@ -120,8 +134,9 @@ async function edit(context) {
     row.append(statusLabel, weightLabel, remove);
     statusRows.append(row);
   }
-  savedStatuses.forEach(addStatusRow);
+  savedStatuses.forEach(status => addStatusRow(status, !statusOptions.has(statusKey(status.name))));
   addStatus.addEventListener('click', () => addStatusRow());
+  addMissingStatus.addEventListener('click', () => addStatusRow({ name: '', weight: null }, true));
 
   form.addEventListener('submit', async event => {
     event.preventDefault();
@@ -132,9 +147,9 @@ async function edit(context) {
       endDate: row.querySelector('.filter-end-date-input').value || null,
     }));
     const nextStatuses = [...statusRows.children].map(row => {
-      const key = row.querySelector('.status-select').value;
+      const key = row.querySelector('.status-select')?.value;
       return {
-        name: statusOptions.get(key)?.name ?? '',
+        name: row.querySelector('.status-name-input')?.value.trim() ?? statusOptions.get(key)?.name ?? '',
         weight: Number.parseFloat(row.querySelector('.status-weight').value),
       };
     });

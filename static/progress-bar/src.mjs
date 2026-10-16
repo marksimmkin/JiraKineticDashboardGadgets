@@ -141,7 +141,7 @@ async function main() {
           workMessage.textContent = 'No matching issues.';
         } else if (progress.kind === 'unmapped') {
           showUnavailable(workTrack, workFill, workPercent, 'Status weights are missing.');
-          const parts = ['Set weights in the Controller for: '];
+          const parts = ['In the Controller, use Add missing status to set weights for: '];
           for (const [index, status] of progress.statuses
             .sort((a, b) => a.name.localeCompare(b.name)).entries()) {
             if (index) parts.push(', ');

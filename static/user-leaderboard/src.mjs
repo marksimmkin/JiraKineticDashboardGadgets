@@ -82,7 +82,7 @@ async function main() {
         }
         const result = summarizeAssignees(issues, active.statuses);
         if (result.unmapped.length) {
-          message.textContent = `Set weights in the Controller for: ${result.unmapped.join(', ')}.`;
+          message.textContent = `In the Controller, use Add missing status to set weights for: ${result.unmapped.join(', ')}.`;
           return;
         }
         showLeaderboard(result);

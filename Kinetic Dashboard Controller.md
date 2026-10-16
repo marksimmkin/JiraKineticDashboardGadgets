@@ -10,6 +10,7 @@ A Jira dashboard widget that allows the user to edit the following information t
 		- End Date
 	- A list of 'Statuses' with each status having a:
 		- Weight = Value between 0.0 - 1.0
+		- A Jira status chosen from the active-workflow list, or a manually entered missing status name copied from a gadget warning. Saved missing names remain editable if they no longer appear in Jira's list.
 - When in View Mode:
 	- A dropdown showing the list of filter names were the user can select each one
 	- Once the drop down is changed, the other gadgets in the dashboard update based on the new JQL filter

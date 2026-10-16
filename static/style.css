@@ -42,6 +42,7 @@ textarea.text-input { resize: vertical; min-height: 62px; }
 .date-card-value { display: block; font-size: clamp(15px, 4vw, 20px); font-weight: 700; line-height: 1.2; }
 .config-heading { margin: 20px 0 8px; font-size: 15px; }
 .status-list { display: grid; gap: 10px; margin: 12px 0; }
+.status-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .status-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, .3fr) auto; align-items: end; gap: 10px; padding: 12px; border: 1px solid var(--ds-border, #dfe1e6); border-radius: 8px; background: var(--ds-surface-raised, #f7f8f9); }
 .status-chart { padding-block: 22px; }
 .chart-filter-name { margin: 8px 0 16px; font-size: 14px; font-weight: 650; }

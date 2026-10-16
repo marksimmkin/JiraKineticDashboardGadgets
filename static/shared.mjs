@@ -74,7 +74,7 @@ export function validateStatuses(statuses) {
   const names = new Set();
   for (const status of statuses) {
     const key = statusKey(status?.name);
-    if (!key) return 'Choose a Jira status for each row.';
+    if (!key) return 'Enter or choose a Jira status for each row.';
     if (names.has(key)) return 'Each Jira status name can be added only once.';
     if (!Number.isFinite(status.weight) || status.weight < 0 || status.weight > 1) {
       return 'Each status weight must be between 0 and 1.';
