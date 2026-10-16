@@ -3,6 +3,7 @@ import { searchAllIssues, summarizeAssignees } from '../issue-data.mjs';
 import { assigneeClause, issueCountButton, narrowJql, statusClause } from '../drilldown.mjs';
 import { createStatusFilter, matchingStatusIssues, visibleIssueJql } from '../status-filter.mjs';
 import { createUserMetricSelect, formatMetric, metricLabel, metricValue } from '../user-metrics.mjs';
+import { sortedUserRows } from '../user-list-sort.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
   GADGET_REFRESH, isForDashboard, statusKey } from '../shared.mjs';
 
@@ -32,6 +33,7 @@ async function main() {
     let generation = 0;
     let loadedIssues = null;
     let allStatuses = [];
+    let sort = { column: 'total', direction: 'descending' };
     const statusFilter = createStatusFilter(id, gadgetId(context), render);
     const metricSelect = createUserMetricSelect(id, gadgetId(context), render);
     panel.append(heading, filterName, statusFilter.element, metricSelect.element, tableArea, message);
@@ -42,11 +44,31 @@ async function main() {
       const table = node('table', 'dashboard-table user-status-table');
       const head = node('thead');
       const header = node('tr');
-      header.append(node('th', '', 'Assignee'), node('th', 'number-cell', metricLabel(metric)));
-      for (const status of result.statuses) header.append(node('th', 'number-cell', status.name));
+      if (sort.column.startsWith('status:') &&
+        !result.statuses.some(status => `status:${status.key}` === sort.column)) {
+        sort = { column: 'total', direction: 'descending' };
+      }
+      function heading(column, label, className = '') {
+        const cell = node('th', className);
+        cell.scope = 'col';
+        cell.setAttribute('aria-sort', sort.column === column ? sort.direction : 'none');
+        const button = node('button', 'table-sort-button',
+          `${label}${sort.column === column ? sort.direction === 'ascending' ? ' ↑' : ' ↓' : ''}`);
+        button.type = 'button';
+        button.title = `Sort ${label} ${sort.column === column && sort.direction === 'ascending' ? 'descending' : 'ascending'}`;
+        button.addEventListener('click', () => {
+          sort = { column, direction: sort.column === column && sort.direction === 'ascending'
+            ? 'descending' : 'ascending' };
+          render();
+        });
+        cell.append(button);
+        return cell;
+      }
+      header.append(heading('assignee', 'Assignee'), heading('total', metricLabel(metric), 'number-cell'));
+      for (const status of result.statuses) header.append(heading(`status:${status.key}`, status.name, 'number-cell'));
       head.append(header);
       const body = node('tbody');
-      const rows = result.rows.sort((a, b) => metricValue(b, metric) - metricValue(a, metric) || a.name.localeCompare(b.name));
+      const rows = sortedUserRows(result.rows, sort, metric);
       for (const row of rows) {
         const tr = node('tr');
         const name = node('th', '', row.name);
