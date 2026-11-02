@@ -48,6 +48,36 @@ test('issue list sorting replaces the outer JQL order without changing quoted te
     'summary ~ "ORDER BY" AND project = GAME ORDER BY cf[10001] DESC');
 });
 
+test('issue list sorting replaces a filter that is only an ORDER BY clause', () => {
+  assert.equal(orderedJql('ORDER BY created DESC', 'key', 'ASC'), 'ORDER BY key ASC');
+  assert.equal(orderedJql('  order by created desc', 'key', 'ASC'), 'ORDER BY key ASC');
+  assert.equal(orderedJql('ORDER BY created DESC', 'customfield_10001', 'DESC'),
+    'ORDER BY cf[10001] DESC');
+  assert.equal(orderedJql('', 'key', 'DESC'), 'ORDER BY key DESC');
+  assert.equal(orderedJql('(ORDER BY x) AND project = GAME', 'key', 'ASC'),
+    '(ORDER BY x) AND project = GAME ORDER BY key ASC');
+  assert.throws(() => orderedJql('ORDER BY created DESC', 'bad field', 'ASC'), /Invalid issue sort/);
+  assert.throws(() => orderedJql('ORDER BY created DESC', 'key', 'UP'), /Invalid issue sort/);
+});
+
+test('QA KDG-1: leading ORDER BY handles whitespace, case and textarea newlines', () => {
+  assert.equal(orderedJql('\nORDER BY created', 'key', 'ASC'), 'ORDER BY key ASC');
+  assert.equal(orderedJql('\tORDER\tBY\tcreated', 'key', 'ASC'), 'ORDER BY key ASC');
+  assert.equal(orderedJql('Order  By created DESC\n', 'key', 'ASC'), 'ORDER BY key ASC');
+  assert.equal(orderedJql('ORDER\nBY created, key ASC', 'priority', 'DESC'), 'ORDER BY priority DESC');
+  assert.equal(orderedJql('project = GAME\nORDER BY created', 'key', 'ASC'), 'project = GAME ORDER BY key ASC');
+  assert.equal(orderedJql('   ', 'key', 'ASC'), 'ORDER BY key ASC');
+});
+
+test('QA KDG-1: ORDER BY lookalikes and quoted text are not treated as the outer order', () => {
+  for (const jql of ['xORDER BY y', 'reorder by y', 'ORDERBY x', '"ORDER BY x"', "summary ~ 'ORDER BY x'",
+    'summary ~ "a \\" ORDER BY x"', '(ORDER BY x)']) {
+    assert.equal(orderedJql(jql, 'key', 'ASC'), `${jql} ORDER BY key ASC`);
+  }
+  assert.equal(orderedJql('summary ~ "a \\\\" ORDER BY x', 'key', 'ASC'), 'summary ~ "a \\\\" ORDER BY key ASC');
+  assert.equal(orderedJql('summary ~ "ORDER BY" ORDER BY x', 'key', 'ASC'), 'summary ~ "ORDER BY" ORDER BY key ASC');
+});
+
 test('issue list columns are normalized and common field values are readable', () => {
   assert.deepEqual(configuredColumns({}), ['key', 'summary', 'status', 'assignee']);
   assert.deepEqual(configuredColumns({ extension: { gadgetConfiguration: {
