@@ -17,14 +17,14 @@ export function orderedJql(jql, field, direction) {
     } else if (char === '"' || char === "'") quote = char;
     else if (char === '(') depth += 1;
     else if (char === ')') depth = Math.max(0, depth - 1);
-    else if (depth === 0 && /\s/i.test(char) && /^\s+ORDER\s+BY\s+/i.test(jql.slice(index))) {
+    else if (depth === 0 && (index === 0 || /\s/.test(char)) && /^\s*ORDER\s+BY\s+/i.test(jql.slice(index))) {
       orderAt = index;
       break;
     }
   }
   const base = (orderAt < 0 ? jql : jql.slice(0, orderAt)).trim();
   const fieldName = /^customfield_(\d+)$/.test(field) ? `cf[${field.slice(12)}]` : field;
-  return `${base} ORDER BY ${fieldName} ${direction}`;
+  return `${base ? `${base} ` : ''}ORDER BY ${fieldName} ${direction}`;
 }
 
 export function configuredColumns(context) {
