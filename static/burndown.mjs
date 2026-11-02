@@ -38,46 +38,138 @@ function postJira(requestJira, path, body) {
 
 export async function fetchBurndownIssues(requestJira, jql) {
   const issues = [];
-  for await (const page of searchPages(requestJira, jql, ['created', 'status'], { messages: BURNDOWN_MESSAGES })) {
+  for await (const page of searchPages(requestJira, jql, ['created', 'status', 'updated'], { messages: BURNDOWN_MESSAGES })) {
     issues.push(...page.issues);
   }
   return issues;
 }
 
-export async function fetchStatusChanges(requestJira, issues) {
+const CHANGELOG_BATCH_SIZE = 1000;
+const CHANGELOG_CONCURRENCY = 3;
+const INVALID_HISTORY = 'Jira returned an invalid status history.';
+
+// Deep-copies status changes so callers and the cache never share objects or Dates.
+const copyEntries = entries => entries.map(change => ({ ...change, at: new Date(change.at) }));
+
+// Session cache of status histories: issueId -> { updated, entries }. It lives as long as the
+// gadget iframe, is reused only while an issue's `updated` value is unchanged, and is pruned to
+// the issues in the latest successful fetch so it cannot grow without limit.
+const statusChangeCache = new Map();
+
+export function clearStatusChangeCache() {
+  statusChangeCache.clear();
+}
+
+// Fetches one batch of issue IDs, following its nextPageToken chain in order. Returns a
+// batch-local Map so that concurrent batches never write to shared state. Stops early when
+// `aborted()` reports that another batch has already failed.
+async function fetchStatusChangeBatch(requestJira, ids, aborted) {
   const changes = new Map();
-  for (let offset = 0; offset < issues.length; offset += 1000) {
-    const ids = issues.slice(offset, offset + 1000).map(issue => String(issue.id));
-    let nextPageToken;
-    const visited = new Set();
-    for (;;) {
-      const body = { issueIdsOrKeys: ids, fieldIds: ['status'], maxResults: 1000 };
-      if (nextPageToken) body.nextPageToken = nextPageToken;
-      const page = await postJira(requestJira, '/rest/api/3/changelog/bulkfetch', body);
-      if (!Array.isArray(page.issueChangeLogs)) throw new Error('Jira returned an invalid status history.');
-      for (const item of page.issueChangeLogs) {
-        const id = String(item.issueId);
-        if (!Array.isArray(item.changeHistories)) throw new Error('Jira returned an invalid status history.');
-        const entries = changes.get(id) ?? [];
-        for (const history of item.changeHistories) {
-          for (const field of history.items ?? []) {
-            if (statusKey(field.fieldId ?? field.field) !== 'status') continue;
-            entries.push({
-              at: jiraInstant(history.created),
-              from: field.fromString || 'Unknown status',
-              to: field.toString || 'Unknown status',
-            });
-          }
+  let nextPageToken;
+  const visited = new Set();
+  for (;;) {
+    const body = { issueIdsOrKeys: ids, fieldIds: ['status'], maxResults: 1000 };
+    if (nextPageToken) body.nextPageToken = nextPageToken;
+    const page = await postJira(requestJira, '/rest/api/3/changelog/bulkfetch', body);
+    if (aborted()) return changes;
+    if (!Array.isArray(page?.issueChangeLogs)) throw new Error(INVALID_HISTORY);
+    for (const item of page.issueChangeLogs) {
+      if (!item || !Array.isArray(item.changeHistories)) throw new Error(INVALID_HISTORY);
+      const id = String(item.issueId);
+      const entries = changes.get(id) ?? [];
+      for (const history of item.changeHistories) {
+        for (const field of history.items ?? []) {
+          if (statusKey(field.fieldId ?? field.field) !== 'status') continue;
+          entries.push({
+            at: jiraInstant(history.created),
+            from: field.fromString || 'Unknown status',
+            to: field.toString || 'Unknown status',
+          });
         }
-        changes.set(id, entries);
       }
-      nextPageToken = page.nextPageToken;
-      if (!nextPageToken) break;
-      if (visited.has(nextPageToken)) throw new Error('Jira repeated a status history page.');
-      visited.add(nextPageToken);
+      changes.set(id, entries);
+    }
+    nextPageToken = page.nextPageToken;
+    if (!nextPageToken) return changes;
+    if (visited.has(nextPageToken)) throw new Error('Jira repeated a status history page.');
+    visited.add(nextPageToken);
+  }
+}
+
+// Runs every batch with at most `limit` in flight. Resolves with results in batch order, or
+// rejects with the first error and starts no further requests.
+function runBatches(batches, limit, run) {
+  return new Promise((resolve, reject) => {
+    const results = new Array(batches.length);
+    let next = 0;
+    let done = 0;
+    let failed = false;
+    const aborted = () => failed;
+    const startNext = () => {
+      if (failed || next >= batches.length) return;
+      const index = next++;
+      run(batches[index], aborted).then(result => {
+        if (failed) return;
+        results[index] = result;
+        done += 1;
+        if (done === batches.length) resolve(results);
+        else startNext();
+      }, error => {
+        if (failed) return;
+        failed = true;
+        reject(error);
+      });
+    };
+    if (!batches.length) { resolve(results); return; }
+    for (let i = 0; i < Math.min(limit, batches.length); i += 1) startNext();
+  });
+}
+
+// Returns issueId -> status changes sorted by time. Issues whose `fields.updated` matches the
+// cached value reuse their cached history; only new or changed issues are sent to bulkfetch.
+export async function fetchStatusChanges(requestJira, issues, { cache = statusChangeCache } = {}) {
+  const changes = new Map();
+  const updatedById = new Map();
+  const toFetch = [];
+  for (const issue of issues) {
+    const id = String(issue.id);
+    const updated = issue.fields?.updated;
+    updatedById.set(id, updated);
+    const cached = cache.get(id);
+    if (updated && cached && cached.updated === updated) {
+      if (cached.entries) changes.set(id, copyEntries(cached.entries));
+    } else {
+      toFetch.push(id);
     }
   }
-  for (const entries of changes.values()) entries.sort((a, b) => a.at - b.at);
+
+  const batches = [];
+  for (let offset = 0; offset < toFetch.length; offset += CHANGELOG_BATCH_SIZE) {
+    batches.push(toFetch.slice(offset, offset + CHANGELOG_BATCH_SIZE));
+  }
+  const results = await runBatches(batches, CHANGELOG_CONCURRENCY,
+    (ids, aborted) => fetchStatusChangeBatch(requestJira, ids, aborted));
+
+  const fetched = new Map();
+  for (const batch of results) {
+    for (const [id, entries] of batch) {
+      const existing = fetched.get(id);
+      if (existing) existing.push(...entries);
+      else fetched.set(id, entries);
+    }
+  }
+  for (const entries of fetched.values()) entries.sort((a, b) => a.at - b.at);
+
+  for (const id of toFetch) {
+    const updated = updatedById.get(id);
+    const entries = fetched.get(id);
+    if (updated) cache.set(id, { updated, entries: entries && copyEntries(entries) });
+    else cache.delete(id);
+  }
+  for (const id of cache.keys()) {
+    if (!updatedById.has(id)) cache.delete(id);
+  }
+  for (const [id, entries] of fetched) changes.set(id, entries);
   return changes;
 }
 

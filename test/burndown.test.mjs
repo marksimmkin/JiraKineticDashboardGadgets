@@ -29,7 +29,7 @@ test('burndown search and bulk status history follow their pagination tokens', a
   assert.equal(issues.length, 2);
   assert.equal(changes.get('1')[0].from, 'To Do');
   assert.equal(changes.get('1')[0].at.getUTCFullYear(), 2026);
-  assert.deepEqual(calls[0].body.fields, ['created', 'status']);
+  assert.deepEqual(calls[0].body.fields, ['created', 'status', 'updated']);
   assert.equal(calls[1].body.nextPageToken, 'search-2');
   assert.deepEqual(calls[2].body.fieldIds, ['status']);
   assert.equal(calls[3].body.nextPageToken, 'changes-2');
