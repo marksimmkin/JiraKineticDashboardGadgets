@@ -1,3 +1,4 @@
+import { postJira as postJiraRequest, searchPages } from './jira-search.mjs';
 import { statusKey } from './shared.mjs';
 import { todayInTimezone } from './progress.mjs';
 
@@ -22,37 +23,25 @@ function jiraInstant(value) {
   return date;
 }
 
-async function postJira(requestJira, path, body) {
-  const response = await requestJira(path, {
-    method: 'POST',
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    if (response.status === 400) throw new Error('The selected JQL or changelog request is invalid.');
-    if (response.status === 401 || response.status === 403) {
-      throw new Error('You cannot view these issues or their status history.');
-    }
-    throw new Error(`Jira request failed (${response.status}).`);
-  }
-  return response.json();
+const BURNDOWN_MESSAGES = {
+  badRequest: 'The selected JQL or changelog request is invalid.',
+  forbidden: 'You cannot view these issues or their status history.',
+  failed: status => `Jira request failed (${status}).`,
+  invalidResult: 'Jira returned an invalid issue search result.',
+  missingPage: 'Jira did not provide the next issue page.',
+  repeatedPage: 'Jira did not provide the next issue page.',
+};
+
+function postJira(requestJira, path, body) {
+  return postJiraRequest(requestJira, path, body, BURNDOWN_MESSAGES);
 }
 
 export async function fetchBurndownIssues(requestJira, jql) {
   const issues = [];
-  let nextPageToken;
-  const visited = new Set();
-  for (;;) {
-    const body = { jql, fields: ['created', 'status'], maxResults: 1000 };
-    if (nextPageToken) body.nextPageToken = nextPageToken;
-    const page = await postJira(requestJira, '/rest/api/3/search/jql', body);
-    if (!Array.isArray(page.issues)) throw new Error('Jira returned an invalid issue search result.');
+  for await (const page of searchPages(requestJira, jql, ['created', 'status'], { messages: BURNDOWN_MESSAGES })) {
     issues.push(...page.issues);
-    if (page.isLast === true) return issues;
-    nextPageToken = page.nextPageToken;
-    if (!nextPageToken || visited.has(nextPageToken)) throw new Error('Jira did not provide the next issue page.');
-    visited.add(nextPageToken);
   }
+  return issues;
 }
 
 export async function fetchStatusChanges(requestJira, issues) {

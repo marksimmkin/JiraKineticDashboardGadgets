@@ -1,4 +1,5 @@
 import { splitOrderBy } from './drilldown.mjs';
+import { searchPage, searchPages } from './jira-search.mjs';
 import { statusKey } from './shared.mjs';
 
 export const DEFAULT_COLUMNS = ['key', 'summary', 'status', 'assignee'];
@@ -20,37 +21,21 @@ export function configuredColumns(context) {
   return columns.length ? columns : DEFAULT_COLUMNS;
 }
 
+const ISSUE_SEARCH_MESSAGES = {
+  badRequest: 'The selected JQL or column selection is invalid.',
+  repeatedPage: 'Jira repeated a search page.',
+};
+
 export async function searchIssuePage(requestJira, jql, fields, nextPageToken, maxResults = 1000) {
-  const body = { jql, fields, maxResults };
-  if (nextPageToken) body.nextPageToken = nextPageToken;
-  const response = await requestJira('/rest/api/3/search/jql', {
-    method: 'POST',
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    if (response.status === 400) throw new Error('The selected JQL or column selection is invalid.');
-    if (response.status === 401 || response.status === 403) throw new Error('You cannot view issues for this filter.');
-    throw new Error(`Jira search failed (${response.status}).`);
-  }
-  const page = await response.json();
-  if (!Array.isArray(page.issues)) throw new Error('Jira returned an invalid search result.');
-  if (page.isLast !== true && !page.nextPageToken) throw new Error('Jira did not provide the next search page.');
-  return page;
+  return searchPage(requestJira, jql, fields, { nextPageToken, maxResults, messages: ISSUE_SEARCH_MESSAGES });
 }
 
 export async function searchAllIssues(requestJira, jql, fields) {
   const issues = [];
-  let nextPageToken;
-  const seen = new Set();
-  for (;;) {
-    const page = await searchIssuePage(requestJira, jql, fields, nextPageToken);
+  for await (const page of searchPages(requestJira, jql, fields, { messages: ISSUE_SEARCH_MESSAGES })) {
     issues.push(...page.issues);
-    if (page.isLast === true) return issues;
-    nextPageToken = page.nextPageToken;
-    if (seen.has(nextPageToken)) throw new Error('Jira repeated a search page.');
-    seen.add(nextPageToken);
   }
+  return issues;
 }
 
 export function summarizeAssignees(issues, statuses) {
