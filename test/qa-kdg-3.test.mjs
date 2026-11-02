@@ -33,7 +33,7 @@ const searchCallers = [
     run: (r, jql) => searchAllIssues(r, jql, ['assignee', 'status', 'timetracking']),
     invalid: 'Jira returned an invalid search result.', failed: s => `Jira search failed (${s}).`,
     forbidden: 'You cannot view issues for this filter.' },
-  { name: 'fetchBurndownIssues', fields: ['created', 'status'], run: (r, jql) => fetchBurndownIssues(r, jql),
+  { name: 'fetchBurndownIssues', fields: ['created', 'status', 'updated'], run: (r, jql) => fetchBurndownIssues(r, jql),
     invalid: 'Jira returned an invalid issue search result.', failed: s => `Jira request failed (${s}).`,
     forbidden: 'You cannot view these issues or their status history.' },
 ];
