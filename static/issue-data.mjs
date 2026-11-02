@@ -1,3 +1,4 @@
+import { splitOrderBy } from './drilldown.mjs';
 import { statusKey } from './shared.mjs';
 
 export const DEFAULT_COLUMNS = ['key', 'summary', 'status', 'assignee'];
@@ -6,23 +7,7 @@ export function orderedJql(jql, field, direction) {
   if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(field) || !['ASC', 'DESC'].includes(direction)) {
     throw new Error('Invalid issue sort.');
   }
-  let quote = '';
-  let depth = 0;
-  let orderAt = -1;
-  for (let index = 0; index < jql.length; index += 1) {
-    const char = jql[index];
-    if (quote) {
-      if (char === '\\') index += 1;
-      else if (char === quote) quote = '';
-    } else if (char === '"' || char === "'") quote = char;
-    else if (char === '(') depth += 1;
-    else if (char === ')') depth = Math.max(0, depth - 1);
-    else if (depth === 0 && (index === 0 || /\s/.test(char)) && /^\s*ORDER\s+BY\s+/i.test(jql.slice(index))) {
-      orderAt = index;
-      break;
-    }
-  }
-  const base = (orderAt < 0 ? jql : jql.slice(0, orderAt)).trim();
+  const base = splitOrderBy(jql).filter;
   const fieldName = /^customfield_(\d+)$/.test(field) ? `cf[${field.slice(12)}]` : field;
   return `${base ? `${base} ` : ''}ORDER BY ${fieldName} ${direction}`;
 }
