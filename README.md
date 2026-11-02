@@ -3,7 +3,7 @@
 Ten Forge Custom UI gadgets for **classic Jira Cloud dashboards**:
 
 - **Controller**: configure named JQL filters with optional Start Date and End Date through the gadget's Edit action, then select the active filter in view mode.
-- **Simple Counter**: counts issues matching that JQL for the current Jira user. It updates when the selection changes or the dashboard refreshes.
+- **Simple Counter**: counts issues matching that JQL for the current Jira user. It shows Jira's approximate count first, marked "about", then the exact count when it is ready. It updates when the selection changes or the dashboard refreshes.
 - **Simple Dates**: shows the selected filter's Start Date and End Date. Missing dates are shown as “Not set”.
 - **Status Bar Chart**: counts issues for each Jira status name selected in the Controller, including zero-count statuses. Jira statuses that share a name are grouped into one bar.
 - **Weighted Progress Bar**: compares calendar time elapsed with weighted work completed for the selected JQL. It requires dates for the upper half and a weight for every matching status for the lower half.
@@ -39,4 +39,4 @@ This app is registered in **Kinetic App Developer Space**. Keep the app ID in `m
 
 For colleagues who are not app contributors, set **Distribution** to **Sharing** in the Atlassian developer console. The production Controller and development Controller keep separate gadget configurations, so configure the production Controller on the shared dashboard.
 
-The counter uses Jira's enhanced JQL search and follows all pages to return an exact count of issues visible to the current user. Very large filters may take longer to count. Jira search results can briefly lag recent issue changes.
+The counter first shows Jira's approximate issue count, then uses Jira's enhanced JQL search and follows all pages to replace it with an exact count of issues visible to the current user. Very large filters may take longer to show the exact count. If the exact count fails, the approximate count stays with a message. Jira search results can briefly lag recent issue changes.

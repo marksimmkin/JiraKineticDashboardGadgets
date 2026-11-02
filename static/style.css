@@ -146,6 +146,9 @@ textarea.text-input { resize: vertical; min-height: 62px; }
 .issue-count-link { border: 0; padding: 0; background: transparent; color: var(--ds-link, #0c66e4); cursor: pointer; font: inherit; font-weight: inherit; text-align: inherit; text-decoration: underline; text-underline-offset: 2px; vertical-align: baseline; }
 .issue-count-link:hover { color: var(--ds-link-pressed, #0055cc); }
 .issue-count-link:focus-visible { outline: 2px solid var(--ds-border-focused, #388bff); outline-offset: 3px; border-radius: 2px; }
+.counter .count, .counter .count .issue-count-link { white-space: nowrap; }
+.count-qualifier { margin-inline-end: .15em; color: var(--ds-text-subtle, #626f86); font-size: 15px; font-weight: 600; vertical-align: baseline; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .status-bar-number.issue-count-link { font-size: 13px; font-weight: 700; }
 .pie-center.issue-count-link { background: var(--ds-surface, #fff); font-size: 22px; font-weight: 750; }
 @media (max-width: 300px) { .dates-grid { grid-template-columns: 1fr; } }
