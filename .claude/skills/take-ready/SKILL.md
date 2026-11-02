@@ -56,7 +56,8 @@ Brief `qa-engineer` with the item text and the branch, but **not** the engineer'
 ## 6. Ship
 1. Commit with a clear message referencing `KDG-<ID>`, ending with the attribution lines from the system reminder. Push the branch.
 2. Open a PR with `gh pr create`: summary, Notion item link, QA verdict and test counts, manual test steps from QA. End the body with the attribution line from the system reminder. Put the PR URL in the item's **PR** field and set Status to **In review**.
-3. Merge: `gh pr merge --squash --delete-branch`, then `git checkout main && git pull`.
+3. **PO/TD review:** don't merge the PR yourself. Send the PO/TD the PR link, the QA verdict and anything that needs a decision, then stop and wait until they say it's merged. (Merging without review is blocked by policy.) Meanwhile you may start the next To do item from an up-to-date `main`, as long as it doesn't touch the same files.
+   Once they say it's merged: `git checkout main && git pull`, and check that the merge commit is on `main`.
 4. Deploy from `main`:
    - `npm ci && npm run build && npm test` (must pass)
    - `forge deploy -e development --non-interactive`
