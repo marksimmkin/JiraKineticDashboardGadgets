@@ -41,9 +41,7 @@ test('QA KDG-2: quotes and brackets that never close keep ORDER BY as filter tex
     { filter: "summary ~ 'it\\'s ORDER BY'", order: 'ORDER BY x' });
 });
 
-test('QA KDG-2: ORDER BY straight after ) or a quote is still out of scope (not split)', () => {
-  assert.deepEqual(splitOrderBy('project = GAME)ORDER BY Rank').order, '');
-  assert.deepEqual(splitOrderBy('project = "GAME"ORDER BY Rank').order, '');
+test('QA KDG-2: ORDER BY glued to a word is not split (glued to ) or a quote is, since KDG-8)', () => {
   assert.deepEqual(splitOrderBy('project = GAMEORDER BY Rank').order, '');
   assert.deepEqual(splitOrderBy('labels = x ORDER BY_x').order, '');
 });

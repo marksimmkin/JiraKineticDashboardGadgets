@@ -45,6 +45,19 @@ test('KDG-2: narrowJql and orderedJql split ORDER BY the same way', () => {
     ['a = 1 ORDER BY b ORDER BY c', 'a = 1', 'ORDER BY b ORDER BY c'],
     ['a = 1 ORDER          BY created', 'a = 1', 'ORDER          BY created'],
     ['a = 1 ORDER BY', 'a = 1', 'ORDER BY'],
+    // KDG-8: ORDER BY straight after a closing bracket or quote is found.
+    ['project="A"ORDER BY x', 'project="A"', 'ORDER BY x'],
+    ["project='A'ORDER BY x", "project='A'", 'ORDER BY x'],
+    ['project in (A, B)ORDER BY x', 'project in (A, B)', 'ORDER BY x'],
+    ['(a = 1)order by x DESC', '(a = 1)', 'order by x DESC'],
+    ['summary ~ "a \\\\"ORDER BY x', 'summary ~ "a \\\\"', 'ORDER BY x'],
+    // KDG-8 negatives: still not after a word character, inside a string right
+    // after an opening or escaped quote, or inside brackets after a ).
+    ['aORDER BY x', 'aORDER BY x', ''],
+    ['summary ~ "ORDER BY x"', 'summary ~ "ORDER BY x"', ''],
+    ["summary ~ 'a' AND b ~ 'ORDER BY x'", "summary ~ 'a' AND b ~ 'ORDER BY x'", ''],
+    ['summary ~ "a \\"ORDER BY x"', 'summary ~ "a \\"ORDER BY x"', ''],
+    ['((a = 1)ORDER BY x)', '((a = 1)ORDER BY x)', ''],
   ];
   for (const [jql, filter, order] of cases) {
     assert.deepEqual(splitOrderBy(jql), { filter, order }, jql);
