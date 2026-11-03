@@ -107,3 +107,78 @@ export function selectedFilterPayload(context, filter) {
     statuses: configuredStatuses(context),
   };
 }
+
+// Identifies one Controller selection. Returns null when the payload has no `revision` (an older
+// Controller), which means the selection must always be handled.
+export function selectionKey(payload) {
+  const revision = payload?.revision;
+  if (revision === null || revision === undefined) return null;
+  return JSON.stringify([revision, payload.jql ?? null, payload.startDate ?? null,
+    payload.endDate ?? null, payload.statuses ?? []]);
+}
+
+export const REFRESH_FALLBACK_MS = 3000;
+// A dashboard refresh that arrives this soon after a new selection was accepted is treated as
+// already answered: the Controller's new revision can reach a gadget before its own refresh.
+export const REFRESH_ANSWERED_MS = 1000;
+
+// Decides how a gadget handles FILTER_SELECTED and GADGET_REFRESH so that repeated events do not
+// repeat Jira downloads. DOM-free; `timers` defaults to the global setTimeout/clearTimeout, and
+// its optional `now()` (default Date.now) is the clock for REFRESH_ANSWERED_MS.
+//
+// - accept(payload): true if the selection should be handled (its key is null or differs from
+//   the last accepted key). Records the key and cancels a pending fallback. Call it only for
+//   payloads that already passed isForDashboard.
+// - refreshAction(payload): one of
+//     'none'     the event is not for this gadget, or it is a dashboard refresh that a new
+//                selection accepted within the last REFRESH_ANSWERED_MS already answered
+//     'request'  emit FILTER_REQUEST (no selection yet)
+//     'refetch'  refetch from the held selection now
+//     'rerender' re-render from the held selection, no request (only when `rerender` is true)
+//     'wait'     wait for the Controller's new revision; `onFallback()` runs once after
+//                `fallbackMs` unless a new selection is accepted first
+// - cancel(): clears a pending fallback timer.
+// - hasSelection: whether any selection has been accepted.
+export function createSelectionTracker({ gadgetId = '', onFallback = () => {}, rerender = false,
+  fallbackMs = REFRESH_FALLBACK_MS, timers = globalThis } = {}) {
+  let hasSelection = false;
+  let lastKey = null;
+  let timer = null;
+  let acceptedAt = null;
+  const now = () => (typeof timers.now === 'function' ? timers.now() : Date.now());
+
+  function cancel() {
+    if (timer !== null) timers.clearTimeout(timer);
+    timer = null;
+  }
+
+  return {
+    get hasSelection() { return hasSelection; },
+    accept(payload) {
+      const key = selectionKey(payload);
+      if (hasSelection && key !== null && key === lastKey) return false;
+      hasSelection = true;
+      lastKey = key;
+      acceptedAt = key === null ? null : now();
+      cancel();
+      return true;
+    },
+    refreshAction(payload) {
+      const dashboard = payload?.origin === 'dashboard';
+      if (!dashboard && payload?.gadgetId !== gadgetId) return 'none';
+      if (!hasSelection) return 'request';
+      if (!dashboard) return rerender ? 'rerender' : 'refetch';
+      if (lastKey === null) return rerender ? 'request' : 'refetch';
+      // A clock that went backwards is not treated as recent; the fallback then still runs.
+      const elapsed = acceptedAt === null ? Infinity : now() - acceptedAt;
+      if (elapsed >= 0 && elapsed < REFRESH_ANSWERED_MS) return 'none';
+      cancel();
+      timer = timers.setTimeout(() => {
+        timer = null;
+        onFallback();
+      }, fallbackMs);
+      return 'wait';
+    },
+    cancel,
+  };
+}

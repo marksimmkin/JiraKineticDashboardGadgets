@@ -4,7 +4,7 @@ import { assigneeClause, issueCountButton, narrowJql } from '../drilldown.mjs';
 import { createStatusFilter, matchingStatusIssues, visibleIssueJql } from '../status-filter.mjs';
 import { createUserMetricSelect, formatMetric, metricLabel, metricValue } from '../user-metrics.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
-  GADGET_REFRESH, isForDashboard, statusKey } from '../shared.mjs';
+  GADGET_REFRESH, createSelectionTracker, isForDashboard, statusKey } from '../shared.mjs';
 
 const root = document.getElementById('app');
 const numberFormat = new Intl.NumberFormat();
@@ -112,7 +112,8 @@ async function main() {
       }
       message.textContent = 'Calculating totals…';
       try {
-        const issues = await searchAllIssues(requestJira, active.jql, ['assignee', 'status', 'timetracking']);
+        const issues = await searchAllIssues(requestJira, active.jql, ['assignee', 'status', 'timetracking'],
+          { isCurrent: () => current === generation });
         if (current !== generation) return;
         if (!issues.length) {
           message.textContent = 'No matching issues.';
@@ -128,8 +129,9 @@ async function main() {
       }
     }
 
+    const selection = createSelectionTracker({ gadgetId: gadgetId(context), onFallback: () => void refresh() });
     await events.on(FILTER_SELECTED, payload => {
-      if (!isForDashboard(payload, id)) return;
+      if (!isForDashboard(payload, id) || !selection.accept(payload)) return;
       active = {
         name: payload.name,
         jql: payload.jql,
@@ -142,10 +144,9 @@ async function main() {
       void refresh();
     });
     await events.on(GADGET_REFRESH, payload => {
-      if (payload?.origin === 'dashboard' || payload?.gadgetId === gadgetId(context)) {
-        if (active) void refresh();
-        else void events.emit(FILTER_REQUEST, { dashboardId: id });
-      }
+      const action = selection.refreshAction(payload);
+      if (action === 'refetch') void refresh();
+      else if (action === 'request') void events.emit(FILTER_REQUEST, { dashboardId: id });
     });
     await events.emit(FILTER_REQUEST, { dashboardId: id });
     setTimeout(() => {

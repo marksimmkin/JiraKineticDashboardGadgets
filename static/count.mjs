@@ -4,9 +4,10 @@ import { postJira, searchPages } from './jira-search.mjs';
 export const APPROXIMATE_COUNT_PATH = '/rest/api/3/search/approximate-count';
 
 // Enhanced JQL search does not return a total, so count each page of visible issues.
-export async function countIssues(requestJira, jql) {
+// `isCurrent`, if given, stops the walk early with SupersededError (see searchPages).
+export async function countIssues(requestJira, jql, { isCurrent } = {}) {
   let count = 0;
-  for await (const page of searchPages(requestJira, jql, [])) count += page.issues.length;
+  for await (const page of searchPages(requestJira, jql, [], { isCurrent })) count += page.issues.length;
   return count;
 }
 

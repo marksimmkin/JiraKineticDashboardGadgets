@@ -15,3 +15,4 @@ A Jira dashboard widget that allows the user to edit the following information t
 	- A dropdown showing the list of filter names were the user can select each one
 	- Once the drop down is changed, the other gadgets in the dashboard update based on the new JQL filter
 	- The selected filter's Start Date and End Date are also passed to the other gadgets for optional use. They do not alter the JQL.
+	- Each selection sent carries a revision that changes on every filter click (even of the active filter) and on every dashboard or Controller refresh. Answers to a gadget's request for the current filter repeat the current revision, so gadgets that already loaded it don't load it again.

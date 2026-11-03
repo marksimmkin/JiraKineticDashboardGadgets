@@ -216,6 +216,7 @@ async function display(context) {
       button.type = 'button';
       button.addEventListener('click', () => {
         selectedIndex = index;
+        revisionCount += 1;
         announce().catch(() => { status.textContent = 'Could not update the other gadgets.'; });
       });
       choices.append(button);
@@ -223,19 +224,28 @@ async function display(context) {
   }
 
   let selectedIndex = 0;
+  // Each selection carries `${loadNonce}:${n}` so gadgets can ignore a repeat of one they have
+  // already loaded. n goes up on every filter click (even of the active filter) and on every
+  // dashboard or Controller refresh; a reply to filter.request repeats the current revision.
+  const loadNonce = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  let revisionCount = 0;
   async function announce() {
     const filter = filters[selectedIndex] ?? null;
     [...choices.children].forEach((button, index) => {
       button.classList.toggle('is-active', index === selectedIndex);
       button.setAttribute('aria-pressed', String(index === selectedIndex));
     });
-    await events.emit(FILTER_SELECTED, selectedFilterPayload(context, filter));
+    await events.emit(FILTER_SELECTED,
+      { ...selectedFilterPayload(context, filter), revision: `${loadNonce}:${revisionCount}` });
   }
   await events.on(FILTER_REQUEST, payload => {
     if (isForDashboard(payload, id)) return announce();
   });
   await events.on(GADGET_REFRESH, payload => {
-    if (payload?.origin === 'dashboard' || payload?.gadgetId === gadgetId(context)) return announce();
+    if (payload?.origin === 'dashboard' || payload?.gadgetId === gadgetId(context)) {
+      revisionCount += 1;
+      return announce();
+    }
   });
   await announce();
 }

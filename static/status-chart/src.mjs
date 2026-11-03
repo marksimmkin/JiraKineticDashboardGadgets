@@ -3,7 +3,7 @@ import { countIssuesByStatus } from '../status-counts.mjs';
 import { issueCountButton, narrowJql, statusClause, statusesClause } from '../drilldown.mjs';
 import { createStatusFilter } from '../status-filter.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
-  GADGET_REFRESH, isForDashboard, statusKey } from '../shared.mjs';
+  GADGET_REFRESH, createSelectionTracker, isForDashboard, statusKey } from '../shared.mjs';
 
 const root = document.getElementById('app');
 const numberFormat = new Intl.NumberFormat();
@@ -102,7 +102,8 @@ async function main() {
       }
       message.textContent = 'Counting visible issues…';
       try {
-        const result = await countIssuesByStatus(requestJira, active.jql, active.statuses);
+        const result = await countIssuesByStatus(requestJira, active.jql, active.statuses,
+          { isCurrent: () => current === generation });
         if (current !== generation) return;
         cachedResult = result;
         render();
@@ -112,8 +113,9 @@ async function main() {
       }
     }
 
+    const selection = createSelectionTracker({ gadgetId: gadgetId(context), onFallback: () => void refresh() });
     await events.on(FILTER_SELECTED, payload => {
-      if (!isForDashboard(payload, id)) return;
+      if (!isForDashboard(payload, id) || !selection.accept(payload)) return;
       active = {
         name: payload.name,
         jql: payload.jql,
@@ -125,10 +127,9 @@ async function main() {
       void refresh();
     });
     await events.on(GADGET_REFRESH, payload => {
-      if (payload?.origin === 'dashboard' || payload?.gadgetId === gadgetId(context)) {
-        if (active) void refresh();
-        else void events.emit(FILTER_REQUEST, { dashboardId: id });
-      }
+      const action = selection.refreshAction(payload);
+      if (action === 'refetch') void refresh();
+      else if (action === 'request') void events.emit(FILTER_REQUEST, { dashboardId: id });
     });
     await events.emit(FILTER_REQUEST, { dashboardId: id });
     setTimeout(() => {

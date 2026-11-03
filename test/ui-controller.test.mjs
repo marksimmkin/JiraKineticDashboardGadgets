@@ -28,7 +28,10 @@ function withTimers(fn) {
 }
 
 const startController = (options = {}) => startGadget('controller', { configuration: CONFIG, ...options });
-const selections = c => c.emitted(FILTER_SELECTED).map(e => e.payload);
+// KDG-5 added `revision` to every selection; it is checked on its own below, so the payload
+// checks here leave it out.
+const selections = c => c.emitted(FILTER_SELECTED).map(({ payload: { revision, ...rest } }) => rest);
+const revisions = c => c.emitted(FILTER_SELECTED).map(e => e.payload.revision);
 const buttons = c => c.findAll('controller-filter-button');
 
 test('KDG-7 Controller: sends the first filter on load and marks it active', withTimers(async () => {
@@ -170,3 +173,32 @@ test('KDG-7 Controller + gadget: Controllers on other dashboards do not reach th
     mock.timers.tick(4000); await flush();
     assert.equal(chart.find('status').textContent, 'Add a Kinetic Dashboard Controller to this dashboard.');
   }));
+
+// ---------------------------------------------------------------------------------------------
+// KDG-5: the selection revision.
+
+test('KDG-5 Controller: revision is load-nonce:n and n rises on clicks and refreshes only',
+  withTimers(async () => {
+    const c = await startController();
+    const [first] = revisions(c);
+    assert.match(first, /^.+:0$/, 'load sends revision n = 0');
+    const nonce = first.slice(0, first.lastIndexOf(':'));
+    buttons(c)[1].click(); await flush();
+    buttons(c)[1].click(); await flush(); // the active filter again
+    await c.bus.send(FILTER_REQUEST, { dashboardId: 'd1' }); await flush();
+    await c.bus.send(GADGET_REFRESH, { origin: 'dashboard' }); await flush();
+    await c.bus.send(FILTER_REQUEST, { dashboardId: 'd1' }); await flush();
+    await c.bus.send(GADGET_REFRESH, { gadgetId: c.gadgetId }); await flush();
+    await c.bus.send(GADGET_REFRESH, { gadgetId: 'someone-else' }); await flush();
+    await c.bus.send(FILTER_REQUEST, { dashboardId: 'd2' }); await flush();
+    assert.deepEqual(revisions(c), [0, 1, 2, 2, 3, 3, 4].map(n => `${nonce}:${n}`),
+      'load, click, re-click, request reply, dashboard refresh, request reply, own refresh');
+    assert.deepEqual(selections(c).at(-1), expected(c, BETA), 'the filter is unchanged by a refresh');
+  }));
+
+test('KDG-5 Controller: each load uses a different nonce', withTimers(async () => {
+  const one = await startController();
+  const two = await startController();
+  assert.notEqual(revisions(one)[0], revisions(two)[0]);
+  assert.match(revisions(two)[0], /:0$/);
+}));

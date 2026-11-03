@@ -1,12 +1,13 @@
 import { searchPages } from './jira-search.mjs';
 import { statusKey } from './shared.mjs';
 
-export async function countIssuesByStatus(requestJira, jql, statuses) {
+// `isCurrent`, if given, stops the walk early with SupersededError (see searchPages).
+export async function countIssuesByStatus(requestJira, jql, statuses, { isCurrent } = {}) {
   const counts = Object.fromEntries(statuses.map(status => [statusKey(status.name), 0]));
   const unmapped = new Map();
   const statusIds = new Map();
   let total = 0;
-  for await (const page of searchPages(requestJira, jql, ['status'])) {
+  for await (const page of searchPages(requestJira, jql, ['status'], { isCurrent })) {
     for (const issue of page.issues) {
       total += 1;
       const rawName = issue?.fields?.status?.name;

@@ -5,7 +5,7 @@ import { issueCountButton, splitOrderBy } from '../drilldown.mjs';
 import { approximateCount } from '../count.mjs';
 import { createBurndownLoader } from '../burndown-state.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
-  GADGET_REFRESH, isForDashboard, statusKey } from '../shared.mjs';
+  GADGET_REFRESH, createSelectionTracker, isForDashboard, statusKey } from '../shared.mjs';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const root = document.getElementById('app');
@@ -165,10 +165,11 @@ async function main() {
         approximateCount(requestJira, jql).then(run.approximate, error => console.warn(error));
       }
       try {
-        const issues = await fetchBurndownIssues(requestJira, jql, { onPage: run.page });
+        const isCurrent = () => current === generation;
+        const issues = await fetchBurndownIssues(requestJira, jql, { onPage: run.page, isCurrent });
         if (current !== generation) return;
         run.searchDone();
-        const changes = await fetchStatusChanges(requestJira, issues, { onProgress: run.history });
+        const changes = await fetchStatusChanges(requestJira, issues, { onProgress: run.history, isCurrent });
         if (current !== generation) return;
         const result = buildBurndown(issues, changes, statuses,
           startDate, endDate, today, context.timezone);
@@ -196,8 +197,9 @@ async function main() {
       }
     }
 
+    const selection = createSelectionTracker({ gadgetId: gadgetId(context), onFallback: () => void refresh() });
     await events.on(FILTER_SELECTED, payload => {
-      if (!isForDashboard(payload, id)) return;
+      if (!isForDashboard(payload, id) || !selection.accept(payload)) return;
       active = {
         name: payload.name,
         jql: payload.jql,
@@ -212,10 +214,9 @@ async function main() {
       void refresh();
     });
     await events.on(GADGET_REFRESH, payload => {
-      if (payload?.origin === 'dashboard' || payload?.gadgetId === gadgetId(context)) {
-        if (active) void refresh();
-        else void events.emit(FILTER_REQUEST, { dashboardId: id });
-      }
+      const action = selection.refreshAction(payload);
+      if (action === 'refetch') void refresh();
+      else if (action === 'request') void events.emit(FILTER_REQUEST, { dashboardId: id });
     });
     await events.emit(FILTER_REQUEST, { dashboardId: id });
     setInterval(() => {
