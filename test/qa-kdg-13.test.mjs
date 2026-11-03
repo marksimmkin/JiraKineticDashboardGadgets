@@ -3,116 +3,37 @@
 // DOM with mocked timers, so the gadget entry point is checked, not only burndown-state.mjs.
 import assert from 'node:assert/strict';
 import test, { mock } from 'node:test';
-import { fileURLToPath } from 'node:url';
-import { build } from 'esbuild';
 import { createAnnouncer } from '../static/counter-state.mjs';
 import { createBurndownLoader, loadingView, initialLoading, withPage, withApproximate,
   withHistory } from '../static/burndown-state.mjs';
+import { FILTER_SELECTED, GADGET_REFRESH } from '../static/shared.mjs';
+import { flush, ok, startGadget as startInstance } from './helpers/gadget-harness.mjs';
 
-const SRC = fileURLToPath(new URL('../static/burndown/src.mjs', import.meta.url));
 const HINT = 'Large filters can take a minute or more.';
-const ok = body => ({ ok: true, status: 200, json: async () => body });
-const flush = async () => { for (let i = 0; i < 10; i += 1) await new Promise(r => setImmediate(r)); };
 
-let bundled = null;
-async function bundle() {
-  if (bundled) return bundled;
-  const result = await build({
-    entryPoints: [SRC], bundle: true, write: false, format: 'esm', platform: 'browser', target: 'es2022',
-    plugins: [{
-      name: 'fake-bridge',
-      setup(b) {
-        b.onResolve({ filter: /^@forge\/bridge$/ }, () => ({ path: 'bridge', namespace: 'qa' }));
-        b.onLoad({ filter: /.*/, namespace: 'qa' }, () => ({
-          loader: 'js',
-          contents: 'const b = globalThis.__qaBridge; export const events = b.events, ' +
-            'requestJira = (...a) => b.requestJira(...a), router = b.router, view = b.view;',
-        }));
-      },
-    }],
-  });
-  bundled = result.outputFiles[0].text;
-  return bundled;
-}
-
-class El {
-  constructor(tag, log) {
-    this.tagName = tag; this.children = []; this.attributes = {}; this._text = '';
-    this.className = ''; this.hidden = false; this.log = log;
-  }
-  get textContent() {
-    return this.children.length
-      ? this.children.map(c => (typeof c === 'string' ? c : c.textContent)).join('') : this._text;
-  }
-  set textContent(value) {
-    this.children = []; this._text = String(value);
-    if (this.className === 'status' || this.className === 'visually-hidden') {
-      this.log.push({ el: this.className, text: this._text, at: Date.now() });
-    }
-  }
-  append(...nodes) { this.children.push(...nodes); }
-  replaceChildren(...nodes) { this.children = nodes; this._text = ''; }
-  setAttribute(k, v) { this.attributes[k] = String(v); }
-  getAttribute(k) { return this.attributes[k]; }
-  addEventListener() {}
-  find(className) {
-    if (this.className === className) return this;
-    for (const c of this.children) if (c instanceof El) { const f = c.find(className); if (f) return f; }
-    return null;
-  }
-}
-
-function deferred() {
-  let resolve;
-  const promise = new Promise(res => { resolve = res; });
-  return { promise, resolve };
-}
-
-// Starts a fresh gadget instance. Returns handles for events, requests and the DOM log.
+// Starts a fresh Weighted Burndown instance (see test/helpers/gadget-harness.mjs). Returns
+// handles for events, requests and the DOM log.
 async function startGadget() {
-  const log = [];
-  const root = new El('main', log);
-  globalThis.document = {
-    getElementById: () => root,
-    createElement: tag => new El(tag, log),
-    createElementNS: (ns, tag) => new El(tag, log),
-  };
-  const handlers = new Map();
-  const requests = [];
-  const bridge = {
-    view: { theme: { enable: async () => {} },
-      getContext: async () => ({ timezone: 'UTC', extension: { dashboard: { id: 'd1' }, gadget: { id: 'g1' } } }) },
-    events: { on: async (name, fn) => { handlers.set(name, fn); }, emit: async () => {} },
-    router: { open: async () => {} },
-    requestJira: (path, options) => {
-      const gate = deferred();
-      requests.push({ path, body: JSON.parse(options.body), gate, resolve: r => gate.resolve(r) });
-      return gate.promise;
-    },
-  };
-  globalThis.__qaBridge = bridge;
-  const code = await bundle();
-  await import(`data:text/javascript;base64,${Buffer.from(`${code}\n//${Math.random()}`).toString('base64')}`);
-  await flush();
-  const panel = root.children[0];
+  const g = await startInstance('burndown');
+  const panel = g.panel();
   return {
-    log, requests, panel,
+    log: g.log, requests: g.requests, panel,
     status: () => panel.find('status'),
     live: () => panel.find('visually-hidden'),
-    select: payload => [...handlers.values()][0](
+    select: payload => g.bus.send(FILTER_SELECTED,
       { dashboardId: 'd1', name: 'F', startDate: '2026-01-01', endDate: '2026-12-31',
         statuses: [{ name: 'To Do', weight: 1 }, { name: 'Done', weight: 0 }], ...payload }),
-    refreshEvent: () => [...handlers.values()][1]({ origin: 'dashboard' }),
-    pendingTo: part => requests.filter(r => r.path.includes(part) && !r.done),
-    statusTexts: () => log.filter(e => e.el === 'status').map(e => e.text),
-    liveTexts: () => log.filter(e => e.el === 'visually-hidden').map(e => e.text),
+    refreshEvent: () => g.bus.send(GADGET_REFRESH, { origin: 'dashboard' }),
+    pendingTo: g.pending,
+    statusTexts: () => g.texts('status'),
+    liveTexts: () => g.texts('visually-hidden'),
   };
 }
 
 const issue = id => ({ id: String(id), fields: { created: '2026-01-02T00:00:00Z', updated: '2026-01-02T00:00:00Z', status: { name: 'To Do' } } });
 const issues = (from, n) => Array.from({ length: n }, (_, i) => issue(from + i));
 const changelogs = ids => ({ issueChangeLogs: ids.map(id => ({ issueId: id, changeHistories: [] })) });
-function answer(req, response) { req.done = true; req.resolve(response); }
+function answer(req, response) { req.resolve(response); }
 
 function withTimers(fn) {
   return async () => {
@@ -124,7 +45,7 @@ function withTimers(fn) {
 
 test('QA KDG-13 e2e: role="status" moved off the visible message to a hidden live region', withTimers(async () => {
   const g = await startGadget();
-  assert.equal(g.status().getAttribute('role'), undefined);
+  assert.equal(g.status().getAttribute('role'), null);
   assert.equal(g.live().getAttribute('role'), 'status');
   assert.equal(g.live().textContent, '');
 }));
