@@ -2,7 +2,7 @@ import { events, requestJira, router, view } from '@forge/bridge';
 import { configuredColumns, formatIssueField, orderedJql, searchIssuePage } from '../issue-data.mjs';
 import { issueCountButton } from '../drilldown.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
-  GADGET_REFRESH, isForDashboard } from '../shared.mjs';
+  GADGET_REFRESH, createSelectionTracker, isForDashboard } from '../shared.mjs';
 
 const root = document.getElementById('app');
 const numberFormat = new Intl.NumberFormat();
@@ -273,17 +273,17 @@ async function display(context) {
   }
 
   more.addEventListener('click', () => { void loadPage(); });
+  const selection = createSelectionTracker({ gadgetId: gadgetId(context), onFallback: () => refresh() });
   await events.on(FILTER_SELECTED, payload => {
-    if (!isForDashboard(payload, id)) return;
+    if (!isForDashboard(payload, id) || !selection.accept(payload)) return;
     active = { name: payload.name, jql: payload.jql };
     filterName.textContent = active.name ?? '';
     refresh();
   });
   await events.on(GADGET_REFRESH, payload => {
-    if (payload?.origin === 'dashboard' || payload?.gadgetId === gadgetId(context)) {
-      if (active) refresh();
-      else void events.emit(FILTER_REQUEST, { dashboardId: id });
-    }
+    const action = selection.refreshAction(payload);
+    if (action === 'refetch') refresh();
+    else if (action === 'request') void events.emit(FILTER_REQUEST, { dashboardId: id });
   });
   await events.emit(FILTER_REQUEST, { dashboardId: id });
   setTimeout(() => {

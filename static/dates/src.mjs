@@ -1,6 +1,6 @@
 import { events, view } from '@forge/bridge';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
-  GADGET_REFRESH, isForDashboard } from '../shared.mjs';
+  GADGET_REFRESH, createSelectionTracker, isForDashboard } from '../shared.mjs';
 
 const root = document.getElementById('app');
 const dateFormatter = new Intl.DateTimeFormat('en-GB', {
@@ -52,9 +52,8 @@ async function main() {
       else node.setAttribute('datetime', value);
     }
 
-    await events.on(FILTER_SELECTED, payload => {
-      if (!isForDashboard(payload, id)) return;
-      receivedSelection = true;
+    let held = null;
+    function render(payload) {
       if (!payload.name) {
         name.textContent = '';
         startValue.textContent = '—';
@@ -68,11 +67,22 @@ async function main() {
       showDate(startValue, payload.startDate);
       showDate(endValue, payload.endDate);
       status.textContent = payload.startDate || payload.endDate ? '' : 'No dates set for this filter.';
+    }
+
+    // Simple Dates shows only the payload, so its own refresh (and the fallback after a dashboard
+    // refresh the Controller did not answer) re-renders the held selection without a request.
+    const selection = createSelectionTracker({ gadgetId: gadgetId(context), rerender: true,
+      onFallback: () => { if (held) render(held); } });
+    await events.on(FILTER_SELECTED, payload => {
+      if (!isForDashboard(payload, id) || !selection.accept(payload)) return;
+      receivedSelection = true;
+      held = payload;
+      render(payload);
     });
     await events.on(GADGET_REFRESH, payload => {
-      if (payload?.origin === 'dashboard' || payload?.gadgetId === gadgetId(context)) {
-        return events.emit(FILTER_REQUEST, { dashboardId: id });
-      }
+      const action = selection.refreshAction(payload);
+      if (action === 'rerender') render(held);
+      else if (action === 'request') return events.emit(FILTER_REQUEST, { dashboardId: id });
     });
     await events.emit(FILTER_REQUEST, { dashboardId: id });
     setTimeout(() => {

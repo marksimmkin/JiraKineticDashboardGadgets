@@ -46,12 +46,30 @@ export async function searchPage(requestJira, jql, fields,
   return page;
 }
 
+// Thrown when a walk stops because `isCurrent()` reported that its result is no longer wanted.
+// A superseded walk never returns normally, so a partial result cannot be mistaken for a
+// complete one (or cached as one).
+export class SupersededError extends Error {
+  constructor(message = 'The Jira request was superseded.') {
+    super(message);
+    this.name = 'SupersededError';
+  }
+}
+
+export function isSuperseded(error) {
+  return error instanceof SupersededError;
+}
+
 // Yields every search page in order. Throws if Jira omits the next token or repeats one.
-export async function* searchPages(requestJira, jql, fields, { maxResults = 1000, messages } = {}) {
+// `isCurrent()`, if given, is checked before each page request (including the first); once it
+// returns false no further request is sent and the walk throws SupersededError.
+export async function* searchPages(requestJira, jql, fields,
+  { maxResults = 1000, messages, isCurrent } = {}) {
   const text = searchMessages(messages);
   let nextPageToken;
   const visitedTokens = new Set();
   for (;;) {
+    if (isCurrent && !isCurrent()) throw new SupersededError();
     const page = await searchPage(requestJira, jql, fields, { nextPageToken, maxResults, messages: text });
     yield page;
     if (page.isLast === true) return;

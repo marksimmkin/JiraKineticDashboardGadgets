@@ -4,7 +4,7 @@ import { counterView, createAnnouncer, initialCount, withApproximate, withExact,
   withExactError } from '../counter-state.mjs';
 import { issueCountButton } from '../drilldown.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
-  GADGET_REFRESH, isForDashboard } from '../shared.mjs';
+  GADGET_REFRESH, createSelectionTracker, isForDashboard } from '../shared.mjs';
 
 const root = document.getElementById('app');
 
@@ -87,7 +87,7 @@ async function main() {
         console.warn('Approximate issue count failed.', error);
       });
       try {
-        const result = await countIssues(requestJira, jql);
+        const result = await countIssues(requestJira, jql, { isCurrent: () => current === generation });
         if (current !== generation) return;
         state = withExact(state, result);
       } catch (error) {
@@ -97,16 +97,16 @@ async function main() {
       render(state, jql);
     }
 
+    const selection = createSelectionTracker({ gadgetId: gadgetId(context), onFallback: () => void refresh() });
     await events.on(FILTER_SELECTED, payload => {
-      if (!isForDashboard(payload, id)) return;
+      if (!isForDashboard(payload, id) || !selection.accept(payload)) return;
       active = { name: payload.name, jql: payload.jql };
       void refresh();
     });
     await events.on(GADGET_REFRESH, payload => {
-      if (payload?.origin === 'dashboard' || payload?.gadgetId === gadgetId(context)) {
-        if (active) void refresh();
-        else void events.emit(FILTER_REQUEST, { dashboardId: id });
-      }
+      const action = selection.refreshAction(payload);
+      if (action === 'refetch') void refresh();
+      else if (action === 'request') void events.emit(FILTER_REQUEST, { dashboardId: id });
     });
     await events.emit(FILTER_REQUEST, { dashboardId: id });
     setTimeout(() => {

@@ -1,4 +1,4 @@
-import { postJira as postJiraRequest, searchPages } from './jira-search.mjs';
+import { postJira as postJiraRequest, searchPages, SupersededError } from './jira-search.mjs';
 import { statusKey } from './shared.mjs';
 import { todayInTimezone } from './progress.mjs';
 
@@ -37,9 +37,11 @@ function postJira(requestJira, path, body) {
 }
 
 // `onPage(loadedSoFar)`, if given, is called after each search page with the running total.
-export async function fetchBurndownIssues(requestJira, jql, { onPage } = {}) {
+// `isCurrent`, if given, stops the walk early with SupersededError (see searchPages).
+export async function fetchBurndownIssues(requestJira, jql, { onPage, isCurrent } = {}) {
   const issues = [];
-  for await (const page of searchPages(requestJira, jql, ['created', 'status', 'updated'], { messages: BURNDOWN_MESSAGES })) {
+  for await (const page of searchPages(requestJira, jql, ['created', 'status', 'updated'],
+    { messages: BURNDOWN_MESSAGES, isCurrent })) {
     issues.push(...page.issues);
     onPage?.(issues.length);
   }
@@ -64,12 +66,14 @@ export function clearStatusChangeCache() {
 
 // Fetches one batch of issue IDs, following its nextPageToken chain in order. Returns a
 // batch-local Map so that concurrent batches never write to shared state. Stops early when
-// `aborted()` reports that another batch has already failed.
-async function fetchStatusChangeBatch(requestJira, ids, aborted) {
+// `aborted()` reports that another batch has already failed. Throws SupersededError, without
+// sending the request, when `isCurrent()` is false before a nextPageToken page.
+async function fetchStatusChangeBatch(requestJira, ids, aborted, isCurrent) {
   const changes = new Map();
   let nextPageToken;
   const visited = new Set();
   for (;;) {
+    if (nextPageToken && !isCurrent()) throw new SupersededError();
     const body = { issueIdsOrKeys: ids, fieldIds: ['status'], maxResults: 1000 };
     if (nextPageToken) body.nextPageToken = nextPageToken;
     const page = await postJira(requestJira, '/rest/api/3/changelog/bulkfetch', body);
@@ -99,27 +103,33 @@ async function fetchStatusChangeBatch(requestJira, ids, aborted) {
 }
 
 // Runs every batch with at most `limit` in flight. Resolves with results in batch order, or
-// rejects with the first error and starts no further requests.
-function runBatches(batches, limit, run) {
+// rejects with the first error and starts no further requests. Once `isCurrent()` is false it
+// starts no new batch, discards any batch that finishes, and rejects with SupersededError.
+function runBatches(batches, limit, run, isCurrent = () => true) {
   return new Promise((resolve, reject) => {
     const results = new Array(batches.length);
     let next = 0;
     let done = 0;
     let failed = false;
     const aborted = () => failed;
+    const fail = error => {
+      failed = true;
+      reject(error);
+    };
     const startNext = () => {
       if (failed || next >= batches.length) return;
+      if (!isCurrent()) { fail(new SupersededError()); return; }
       const index = next++;
       run(batches[index], aborted).then(result => {
         if (failed) return;
+        if (!isCurrent()) { fail(new SupersededError()); return; }
         results[index] = result;
         done += 1;
         if (done === batches.length) resolve(results);
         else startNext();
       }, error => {
         if (failed) return;
-        failed = true;
-        reject(error);
+        fail(error);
       });
     };
     if (!batches.length) { resolve(results); return; }
@@ -133,8 +143,10 @@ function runBatches(batches, limit, run) {
 // request: once before the first request (done = issues served from the cache), then each time
 // a whole batch finishes, including all of its nextPageToken pages (done grows by its ID count).
 // It is never called when everything is cached, nor for batches that end after a failure.
+// `isCurrent()`, if given, is checked before each batch and each nextPageToken page; once it is
+// false no further request is sent, the cache is left untouched and SupersededError is thrown.
 export async function fetchStatusChanges(requestJira, issues,
-  { cache = statusChangeCache, onProgress } = {}) {
+  { cache = statusChangeCache, onProgress, isCurrent = () => true } = {}) {
   const changes = new Map();
   const updatedById = new Map();
   const toFetch = [];
@@ -158,13 +170,13 @@ export async function fetchStatusChanges(requestJira, issues,
   let done = total - toFetch.length;
   if (onProgress && toFetch.length) onProgress({ done, total });
   const results = await runBatches(batches, CHANGELOG_CONCURRENCY, async (ids, aborted) => {
-    const batch = await fetchStatusChangeBatch(requestJira, ids, aborted);
-    if (onProgress && !aborted()) {
+    const batch = await fetchStatusChangeBatch(requestJira, ids, aborted, isCurrent);
+    if (onProgress && !aborted() && isCurrent()) {
       done += ids.length;
       onProgress({ done, total });
     }
     return batch;
-  });
+  }, isCurrent);
 
   const fetched = new Map();
   for (const batch of results) {

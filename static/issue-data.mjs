@@ -30,9 +30,11 @@ export async function searchIssuePage(requestJira, jql, fields, nextPageToken, m
   return searchPage(requestJira, jql, fields, { nextPageToken, maxResults, messages: ISSUE_SEARCH_MESSAGES });
 }
 
-export async function searchAllIssues(requestJira, jql, fields) {
+// `isCurrent`, if given, stops the walk early with SupersededError (see searchPages).
+export async function searchAllIssues(requestJira, jql, fields, { isCurrent } = {}) {
   const issues = [];
-  for await (const page of searchPages(requestJira, jql, fields, { messages: ISSUE_SEARCH_MESSAGES })) {
+  for await (const page of searchPages(requestJira, jql, fields,
+    { messages: ISSUE_SEARCH_MESSAGES, isCurrent })) {
     issues.push(...page.issues);
   }
   return issues;

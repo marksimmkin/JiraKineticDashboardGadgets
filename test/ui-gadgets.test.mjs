@@ -2,8 +2,8 @@
 // flow, run through test/helpers/gadget-harness.mjs with a fake @forge/bridge and a fake DOM.
 import assert from 'node:assert/strict';
 import test, { mock } from 'node:test';
-import { FILTER_REQUEST, FILTER_SELECTED, GADGET_REFRESH } from '../static/shared.mjs';
-import { createStorage, flush, ok, selection, startGadget } from './helpers/gadget-harness.mjs';
+import { FILTER_REQUEST, FILTER_SELECTED, GADGET_REFRESH, REFRESH_ANSWERED_MS } from '../static/shared.mjs';
+import { createBus, createStorage, flush, ok, selection, startGadget } from './helpers/gadget-harness.mjs';
 
 const ADD_CONTROLLER = 'Add a Kinetic Dashboard Controller to this dashboard.';
 // Every display gadget (the Controller has its own tests in ui-controller.test.mjs).
@@ -345,12 +345,14 @@ test('KDG-7 dates: shows the selected dates and refresh asks the Controller agai
   assert.equal(end.textContent, 'Not set');
   assert.equal(end.getAttribute('datetime'), null);
   assert.equal(g.find('status').textContent, '');
-  // Simple Dates keeps no copy of the selection, so every refresh re-requests it.
+  // This selection has no revision (an older Controller), so a dashboard refresh still asks the
+  // Controller again. KDG-5: its own refresh re-renders the held selection without asking.
   await g.bus.send(GADGET_REFRESH, { origin: 'dashboard' });
   await g.bus.send(GADGET_REFRESH, { gadgetId: g.gadgetId });
   await g.bus.send(GADGET_REFRESH, { gadgetId: 'another-gadget' });
   await flush();
-  assert.equal(g.emitted(FILTER_REQUEST).length, 3);
+  assert.equal(g.emitted(FILTER_REQUEST).length, 2);
+  assert.equal(start.textContent, '3 Feb 2026');
   await select(g, { name: 'No dates', startDate: null, endDate: null });
   await flush();
   assert.equal(g.find('status').textContent, 'No dates set for this filter.');
@@ -373,3 +375,239 @@ test('KDG-7 status-chart: hidden statuses survive blocked browser storage', with
   assert.equal(g.find('status').textContent, '0 of 2 issues in selected statuses');
   assert.equal(g.find('status-filter-summary').textContent, 'Statuses: 1 of 2');
 }));
+
+// ---------------------------------------------------------------------------------------------
+// KDG-5: repeated selections and refreshes do not repeat Jira downloads.
+
+const searches = g => g.requests.filter(r => r.path.includes('search/jql')).length;
+const revised = (revision, overrides) => ({ revision, ...overrides });
+// Gadgets that walk every search page (the Issue List loads one page at a time instead).
+const WALKING = FETCHING.filter(name => name !== 'issue-list');
+
+for (const name of FETCHING) {
+  test(`KDG-5 ${name}: a repeated revision is ignored and a new one reloads`, withTimers(async () => {
+    const g = await startGadget(name, { jira: jiraFor('A', 2) });
+    await select(g, revised('n:0'));
+    await flush();
+    assert.equal(searches(g), 1);
+    const shown = g.root.textContent;
+    await select(g, revised('n:0'));
+    await select(g, revised('n:0', { name: 'Renamed' }));
+    await flush();
+    assert.equal(searches(g), 1, 'the same revision and query is not loaded again');
+    assert.equal(g.root.textContent, shown, 'nothing on screen changed');
+    await select(g, revised('n:1'));
+    await flush();
+    assert.equal(searches(g), 2, 'a new revision (for example the active filter clicked again) reloads');
+    await select(g, revised('n:1', { jql: 'project = A2' }));
+    await flush();
+    assert.equal(searches(g), 3, 'a different query under the same revision reloads');
+  }));
+
+  test(`KDG-5 ${name}: a selection with no revision (older Controller) always reloads`, withTimers(async () => {
+    const g = await startGadget(name, { jira: jiraFor('A', 2) });
+    await select(g);
+    await select(g);
+    await flush();
+    assert.equal(searches(g), 2);
+  }));
+
+  test(`KDG-5 ${name}: dashboard refresh waits for the Controller's new revision`, withTimers(async () => {
+    const g = await startGadget(name, { jira: jiraFor('A', 2) });
+    await select(g, revised('n:0'));
+    await flush();
+    mock.timers.tick(REFRESH_ANSWERED_MS); await flush(); // the refresh is not an answered one
+    await g.bus.send(GADGET_REFRESH, { origin: 'dashboard' });
+    await flush();
+    assert.equal(searches(g), 1, 'no reload of its own');
+    assert.equal(g.emitted(FILTER_REQUEST).length, 1, 'no new filter.request');
+    mock.timers.tick(2999); await flush();
+    await select(g, revised('n:1'));
+    await flush();
+    assert.equal(searches(g), 2, 'the new revision reloads once');
+    mock.timers.tick(10000); await flush();
+    assert.equal(searches(g), 2, 'the fallback was cancelled');
+  }));
+
+  test(`KDG-5 ${name}: dashboard refresh falls back to one reload after 3 s with no answer`,
+    withTimers(async () => {
+      const g = await startGadget(name, { jira: jiraFor('A', 2) });
+      await select(g, revised('n:0'));
+      await flush();
+      const settled = g.root.textContent;
+      mock.timers.tick(REFRESH_ANSWERED_MS); await flush();
+      await g.bus.send(GADGET_REFRESH, { origin: 'dashboard' });
+      await flush();
+      mock.timers.tick(2999); await flush();
+      await select(g, revised('n:0'));
+      await flush();
+      assert.equal(searches(g), 1, 'a repeat of the old revision is not the answer');
+      mock.timers.tick(1); await flush();
+      assert.equal(searches(g), 2, 'reloads once at 3 s');
+      mock.timers.tick(10000); await flush();
+      assert.equal(searches(g), 2, 'only once');
+      assert.equal(g.emitted(FILTER_REQUEST).length, 1);
+      assert.equal(g.root.textContent, settled);
+    }));
+
+  test(`KDG-5 ${name}: its own refresh reloads at once with a revisioned selection`, withTimers(async () => {
+    const g = await startGadget(name, { jira: jiraFor('A', 2) });
+    await select(g, revised('n:0'));
+    await flush();
+    await g.bus.send(GADGET_REFRESH, { gadgetId: g.gadgetId });
+    await flush();
+    assert.equal(searches(g), 2);
+    assert.equal(g.emitted(FILTER_REQUEST).length, 1);
+    mock.timers.tick(10000); await flush();
+    assert.equal(searches(g), 2, 'no fallback for its own refresh');
+  }));
+
+  // The Controller's new revision can reach a gadget before the gadget's own dashboard refresh.
+  test(`KDG-5 ${name}: a new revision that arrives before the dashboard refresh reloads once`,
+    withTimers(async () => {
+      const g = await startGadget(name, { jira: jiraFor('A', 2) });
+      await select(g, revised('n:0'));
+      await flush();
+      mock.timers.tick(60000); await flush();
+      await select(g, revised('n:1'));
+      await flush();
+      assert.equal(searches(g), 2, 'the new revision reloads');
+      mock.timers.tick(REFRESH_ANSWERED_MS - 1); await flush();
+      await g.bus.send(GADGET_REFRESH, { origin: 'dashboard' });
+      await flush();
+      mock.timers.tick(10000); await flush();
+      assert.equal(searches(g), 2, 'the late refresh is already answered: no second reload, no fallback');
+      assert.equal(g.emitted(FILTER_REQUEST).length, 1);
+    }));
+}
+
+for (const name of WALKING) {
+  test(`KDG-5 ${name}: a superseded search walk requests no further page`, withTimers(async () => {
+    const g = await startGadget(name);
+    await select(g, revised('n:0', { jql: 'project = OLD' }));
+    await flush();
+    const old = g.pending('search/jql')[0];
+    await select(g, revised('n:1', { name: 'New', jql: 'project = NEW' }));
+    await flush();
+    old.resolve(ok({ issues: makeIssues('OLD', 3), nextPageToken: 'old-2', isLast: false }));
+    await flush();
+    const oldRequests = g.requests.filter(r => r.path.includes('search/jql') && r.body?.jql === 'project = OLD');
+    assert.equal(oldRequests.length, 1, 'page 2 of the old walk is never requested');
+    assert.equal(g.pending('bulkfetch').length, 0);
+    await answerAll(g, jiraFor('NEW', 2), ['project = NEW']);
+    assert.ok(shows(g, 'New'));
+    assert.ok(!/Could not|superseded/i.test(g.root.textContent), g.root.textContent);
+  }));
+}
+
+test('KDG-5 burndown: a superseded walk stops before the next changelog page', withTimers(async () => {
+  const g = await startGadget('burndown');
+  await select(g, revised('n:0', { jql: 'project = OLD' }));
+  await flush();
+  g.pending('search/jql')[0].resolve(ok({ issues: makeIssues('OLD', 2), isLast: true }));
+  await flush();
+  const batch = g.pending('bulkfetch')[0];
+  assert.ok(batch, 'the changelog fetch started');
+  await select(g, revised('n:1', { name: 'New', jql: 'project = NEW' }));
+  await flush();
+  batch.resolve(ok({ issueChangeLogs: [], nextPageToken: 'cl-2' }));
+  await flush();
+  assert.equal(g.requests.filter(r => r.body?.nextPageToken === 'cl-2').length, 0);
+  await answerAll(g, jiraFor('NEW', 2), ['project = NEW']);
+  assert.match(g.find('burndown-summary').textContent, /2 issues in the current JQL scope$/);
+}));
+
+test('KDG-5 progress-bar: own refresh and the fallback also update the time half', withTimers(async () => {
+  const g = await startGadget('progress-bar', { jira: jiraFor('A', 2) });
+  await select(g, revised('n:0'));
+  await flush();
+  const percent = () => g.findAll('progress-percent')[0].textContent;
+  const day = 24 * 3600 * 1000;
+  const start = percent();
+  // Move the clock without running the minute timer, so only a refresh can update the time half.
+  // (Going forward makes that timer overdue, so no timer is ticked until the clock goes back.)
+  mock.timers.setTime(Date.now() + 30 * day);
+  await g.bus.send(GADGET_REFRESH, { gadgetId: g.gadgetId });
+  await flush();
+  const afterOwn = percent();
+  assert.notEqual(afterOwn, start, 'own refresh updated the time half');
+  assert.equal(searches(g), 2);
+  // Back in time this time, so the overdue minute timer does not run on the tick below.
+  mock.timers.setTime(Date.now() - 60 * day);
+  await g.bus.send(GADGET_REFRESH, { origin: 'dashboard' });
+  await flush();
+  assert.equal(percent(), afterOwn, 'waiting: nothing changes yet');
+  mock.timers.tick(3000); await flush();
+  assert.notEqual(percent(), afterOwn, 'the fallback updated the time half');
+  assert.equal(searches(g), 3, 'and reloaded the work half');
+}));
+
+test('KDG-5 dates: its own refresh re-renders without asking the Controller', withTimers(async () => {
+  const g = await startGadget('dates');
+  await select(g, revised('n:0', { startDate: '2026-02-03' }));
+  await flush();
+  await g.bus.send(GADGET_REFRESH, { gadgetId: g.gadgetId });
+  await flush();
+  assert.equal(g.emitted(FILTER_REQUEST).length, 1, 'only the request sent on load');
+  assert.equal(g.findAll('date-card-value')[0].textContent, '3 Feb 2026');
+  mock.timers.tick(REFRESH_ANSWERED_MS); await flush();
+  await g.bus.send(GADGET_REFRESH, { origin: 'dashboard' });
+  await flush();
+  assert.equal(g.emitted(FILTER_REQUEST).length, 1, 'a dashboard refresh waits for the new revision');
+  await select(g, revised('n:1', { name: 'Next', startDate: '2026-04-05' }));
+  await flush();
+  assert.equal(g.find('dates-filter-name').textContent, 'Next');
+  assert.equal(g.findAll('date-card-value')[0].textContent, '5 Apr 2026');
+  mock.timers.tick(10000); await flush();
+  assert.equal(g.find('dates-filter-name').textContent, 'Next');
+}));
+
+test('KDG-5 dates: own refresh before any selection still asks the Controller', withTimers(async () => {
+  const g = await startGadget('dates');
+  await g.bus.send(GADGET_REFRESH, { gadgetId: g.gadgetId });
+  await flush();
+  assert.equal(g.emitted(FILTER_REQUEST).length, 2);
+}));
+
+// One dashboard: the Controller and every gadget on one bus, loaded Controller first. Counts the
+// Jira search requests (search/jql) each step sends across all gadgets. Before KDG-5 these were
+// load 41, dashboard refresh 24, click 8 and Simple Dates' own refresh 8.
+test('KDG-5 dashboard: Jira searches for load, dashboard refresh, a click and a Simple Dates refresh',
+  withTimers(async () => {
+    const bus = createBus();
+    const controller = await startGadget('controller', { bus, configuration: {
+      filters: [{ name: 'Filter A', jql: 'project = A', startDate: '2026-01-01', endDate: '2026-12-31' },
+        { name: 'Filter B', jql: 'project = B', startDate: '2026-01-01', endDate: '2026-12-31' }],
+      statuses: selection().statuses,
+    } });
+    const gadgets = [];
+    for (const name of GADGETS) gadgets.push(await startGadget(name, { bus, jira: jiraFor('A', 2) }));
+    await flush();
+    const total = () => gadgets.reduce((sum, g) => sum + searches(g), 0);
+    const counts = {};
+    let last = 0;
+    const step = label => { counts[label] = total() - last; last = total(); };
+    step('load');
+    await bus.send(GADGET_REFRESH, { origin: 'dashboard' });
+    await flush();
+    mock.timers.tick(3000); await flush(); // past the fallback
+    step('dashboard refresh');
+    controller.findAll('controller-filter-button')[1].click();
+    await flush();
+    step('click');
+    const dates = gadgets[GADGETS.indexOf('dates')];
+    await bus.send(GADGET_REFRESH, { gadgetId: dates.gadgetId });
+    await flush();
+    mock.timers.tick(3000); await flush();
+    step('Simple Dates refresh');
+    console.log(`KDG-5 dashboard search requests: ${JSON.stringify(counts)}`);
+    for (const g of gadgets) {
+      assert.ok(shows(g, 'Filter B'), `${g.name} shows the clicked filter`);
+      assert.ok(!shows(g, ADD_CONTROLLER), g.name);
+    }
+    assert.deepEqual(counts, { load: FETCHING.length, 'dashboard refresh': FETCHING.length,
+      click: FETCHING.length, 'Simple Dates refresh': 0 }, 'one search per data gadget, none for Simple Dates');
+    for (const g of gadgets.filter(g => g.name !== 'dates')) {
+      assert.equal(searches(g), 3, `${g.name}: load, dashboard refresh and click`);
+    }
+  }));
