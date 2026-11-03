@@ -62,10 +62,16 @@ test('QA KDG-2: intended behaviour changes from the two old parsers', () => {
 });
 
 test('QA KDG-2: very long JQL is split quickly', () => {
+  // Guards against quadratic or catastrophic behaviour on long input. It
+  // measures this process's CPU time, not wall-clock time, so other load on
+  // the machine does not count. A linear split of this ~200k-character JQL
+  // uses about 10-40 ms of CPU; a quadratic one uses seconds.
   const jql = `${'a = 1 AND '.repeat(20000)}a = 1 ORDER BY Rank`;
-  const start = Date.now();
+  const start = process.cpuUsage();
   const { filter, order } = splitOrderBy(jql);
+  const used = process.cpuUsage(start);
   assert.equal(order, 'ORDER BY Rank');
   assert.ok(filter.endsWith('a = 1'));
-  assert.ok(Date.now() - start < 500);
+  const cpuMs = (used.user + used.system) / 1000;
+  assert.ok(cpuMs < 1000, `splitOrderBy used ${cpuMs.toFixed(0)} ms of CPU`);
 });
