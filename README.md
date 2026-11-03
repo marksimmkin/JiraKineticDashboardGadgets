@@ -9,7 +9,7 @@ Ten Forge Custom UI gadgets for **classic Jira Cloud dashboards**:
 - **Weighted Progress Bar**: compares calendar time elapsed with weighted work completed for the selected JQL. It requires dates for the upper half and a weight for every matching status for the lower half.
 - **Weighted Burndown**: plots daily weighted remaining work against a straight-line ideal from the start-date score to zero on the end date. It reconstructs historical status weights from Jira issue changelogs.
 - **Status Pie Chart**: shows the Controller's configured statuses as slices, with counts and percentages for the issues in those statuses.
-- **List**: shows matching issues in JQL order, 50 at a time. Configure and reorder up to 10 Jira field columns in this gadget's Edit view; custom fields are available from Jira's field catalogue.
+- **List**: shows matching issues in JQL order by default, 50 at a time. Click a column heading to sort all matching issues by that field, ascending first, then descending on a second click. The sort replaces the filter's own ORDER BY and stays in place when the Controller filter changes or the dashboard refreshes, until the gadget reloads; it isn't saved. Fields that Jira can't sort by show an error instead. Configure and reorder up to 10 Jira field columns in this gadget's Edit view; custom fields are available from Jira's field catalogue.
 - **User List**: groups matching issues by assignee and current status, including Unassigned issues.
 - **User Leaderboard**: ranks assignees by the sum of their issues' remaining status weights. It includes Unassigned and requires weights for all matching statuses.
 
