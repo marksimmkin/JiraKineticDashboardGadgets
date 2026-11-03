@@ -62,7 +62,7 @@ const select = (g, overrides) => g.bus.send(FILTER_SELECTED, selection(overrides
 const shows = (g, text) => g.root.textContent.includes(text);
 
 // ---------------------------------------------------------------------------------------------
-// The event contract every gadget follows (README "Controller events").
+// The event contract every gadget follows (README (the paragraph starting "Add one Controller")).
 
 for (const name of GADGETS) {
   test(`KDG-7 ${name}: sends filter.request for its dashboard on load`, withTimers(async () => {
