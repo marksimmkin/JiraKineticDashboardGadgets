@@ -29,7 +29,7 @@ Issue-count numbers throughout the gadgets open Jira's standard issue navigator 
 
 ## Setup
 
-The source uses `@forge/bridge` for Jira and `esbuild` for the browser bundles:
+The source uses `@forge/bridge` for Jira and `esbuild` for the browser bundles. Use Node.js 24 (24.22.1 or later), which matches the app's `nodejs24.x` runtime and Forge CLI 15. On macOS: `brew install node@24 && brew link --overwrite --force node@24`, then reinstall the CLI with `npm install -g @forge/cli --allow-scripts=@forge/cli,cloudflared,keytar` (npm 11 blocks install scripts unless they are allowed, and the CLI needs them to store your login).
 
 1. Run `npm ci`, `npm run build`, and `npm test`.
 2. For development changes, run `forge deploy -e development`. After validating a release, run `forge deploy -e production`. Both environments are installed on `kineticgames.atlassian.net` in Jira; use the production gadgets (without the DEV label) for shared dashboards.
