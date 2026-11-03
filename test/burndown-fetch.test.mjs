@@ -1,7 +1,7 @@
 // KDG-6: concurrent changelog batches, session cache of status histories, null-body handling.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { clearStatusChangeCache, fetchStatusChanges } from '../static/burndown.mjs';
+import { clearStatusChangeCache, fetchBurndownIssues, fetchStatusChanges } from '../static/burndown.mjs';
 
 const ok = body => ({ ok: true, status: 200, json: async () => body });
 
@@ -192,4 +192,86 @@ test('a 200 response with a null body gives the friendly invalid history message
     { message: 'Jira returned an invalid status history.' });
   await assert.rejects(fetchStatusChanges(async () => ok({ issueChangeLogs: [null] }), [{ id: 1 }], { cache: new Map() }),
     { message: 'Jira returned an invalid status history.' });
+});
+
+// KDG-13: progress callbacks.
+test('fetchBurndownIssues calls onPage with the running total after each page', async () => {
+  const pages = [
+    { issues: Array.from({ length: 1000 }, (_, i) => ({ id: String(i) })), nextPageToken: 't1', isLast: false },
+    { issues: Array.from({ length: 1000 }, (_, i) => ({ id: String(1000 + i) })), nextPageToken: 't2', isLast: false },
+    { issues: [{ id: 'last' }], isLast: true },
+  ];
+  let call = 0;
+  const seen = [];
+  const issues = await fetchBurndownIssues(async () => ok(pages[call++]), 'project = A',
+    { onPage: loaded => seen.push(loaded) });
+  assert.deepEqual(seen, [1000, 2000, 2001]);
+  assert.equal(issues.length, 2001);
+  assert.equal((await fetchBurndownIssues(async () => ok({ issues: [], isLast: true }), 'x')).length, 0,
+    'onPage is optional');
+});
+
+test('onProgress starts at the cached count and adds each batch when it completes', async () => {
+  const cache = new Map();
+  const { request: warm } = countingRequest();
+  await fetchStatusChanges(warm, issuesFor(1200), { cache });
+  const issues = issuesFor(3500);
+  const events = [];
+  const { request, pending } = controlledRequest();
+  const run = fetchStatusChanges(request, issues, { cache, onProgress: progress => events.push(progress) });
+  assert.deepEqual(events, [{ done: 1200, total: 3500 }], 'reported before any request');
+  await flush();
+  assert.deepEqual(pending.map(call => call.body.issueIdsOrKeys.length), [1000, 1000, 300]);
+  pending[2].gate.resolve(ok({ issueChangeLogs: changeLogsFor(pending[2].body.issueIdsOrKeys) }));
+  await flush();
+  assert.deepEqual(events.at(-1), { done: 1500, total: 3500 });
+  pending[0].gate.resolve(ok({ issueChangeLogs: changeLogsFor(pending[0].body.issueIdsOrKeys) }));
+  pending[1].gate.resolve(ok({ issueChangeLogs: changeLogsFor(pending[1].body.issueIdsOrKeys) }));
+  const changes = await run;
+  assert.deepEqual(events, [
+    { done: 1200, total: 3500 }, { done: 1500, total: 3500 },
+    { done: 2500, total: 3500 }, { done: 3500, total: 3500 },
+  ]);
+  assert.equal(changes.size, 3500);
+  assert.equal(cache.size, 3500);
+});
+
+test('onProgress reports a multi-page batch once, after its last page', async () => {
+  const events = [];
+  const { request, pending } = controlledRequest();
+  const run = fetchStatusChanges(request, issuesFor(2), { cache: new Map(), onProgress: p => events.push(p) });
+  await flush();
+  pending[0].gate.resolve(ok({ issueChangeLogs: changeLogsFor(['1']), nextPageToken: 'p2' }));
+  await flush();
+  assert.equal(pending.length, 2);
+  assert.deepEqual(events, [{ done: 0, total: 2 }], 'no report after the first page');
+  pending[1].gate.resolve(ok({ issueChangeLogs: changeLogsFor(['2']) }));
+  await run;
+  assert.deepEqual(events, [{ done: 0, total: 2 }, { done: 2, total: 2 }]);
+});
+
+test('onProgress is not called when every issue is cached', async () => {
+  const cache = new Map();
+  const { request, calls } = countingRequest();
+  await fetchStatusChanges(request, issuesFor(3), { cache });
+  const events = [];
+  const result = await fetchStatusChanges(request, issuesFor(3), { cache, onProgress: p => events.push(p) });
+  assert.deepEqual(events, []);
+  assert.equal(calls.length, 1);
+  assert.equal(result.size, 3);
+  await fetchStatusChanges(request, [], { cache, onProgress: p => events.push(p) });
+  assert.deepEqual(events, []);
+});
+
+test('onProgress is not called for batches that finish after a failure', async () => {
+  const events = [];
+  const { request, pending } = controlledRequest();
+  const run = fetchStatusChanges(request, issuesFor(3000), { cache: new Map(), onProgress: p => events.push(p) });
+  await flush();
+  pending[0].gate.resolve({ ok: false, status: 500, json: async () => ({}) });
+  await assert.rejects(run, { message: 'Jira request failed (500).' });
+  pending[1].gate.resolve(ok({ issueChangeLogs: changeLogsFor(pending[1].body.issueIdsOrKeys) }));
+  pending[2].gate.resolve(ok({ issueChangeLogs: changeLogsFor(pending[2].body.issueIdsOrKeys) }));
+  await flush();
+  assert.deepEqual(events, [{ done: 0, total: 3000 }]);
 });
