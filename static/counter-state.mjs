@@ -69,19 +69,49 @@ export function counterView(state, format = new Intl.NumberFormat()) {
 
 // Writes to the single live region. A delayed announcement is replaced or cancelled by any
 // later one, so a quick exact count is announced alone.
-export function createAnnouncer(write, timers = globalThis) {
+// With `minInterval` > 0, every write starts a cool-down of that many ms. `announceLatest(text)`
+// writes at once outside a cool-down; inside one it keeps only the latest text and writes it
+// when the cool-down ends (trailing, latest wins). `announce` and `cancel` drop that pending
+// text, so final messages are immediate. With the default of 0 the behaviour is unchanged.
+export function createAnnouncer(write, timers = globalThis, { minInterval = 0 } = {}) {
   let timer = null;
+  let cooldown = null;
+  let pending = null;
+  function emit(text) {
+    write(text);
+    if (minInterval > 0) {
+      cooldown = timers.setTimeout(() => {
+        cooldown = null;
+        if (pending === null) return;
+        const next = pending;
+        pending = null;
+        emit(next);
+      }, minInterval);
+    }
+  }
   function cancel() {
     if (timer !== null) timers.clearTimeout(timer);
+    if (cooldown !== null) timers.clearTimeout(cooldown);
     timer = null;
+    cooldown = null;
+    pending = null;
   }
   function announce(text, delay = 0) {
     cancel();
     if (delay > 0) {
-      timer = timers.setTimeout(() => { timer = null; write(text); }, delay);
+      timer = timers.setTimeout(() => { timer = null; emit(text); }, delay);
     } else {
-      write(text);
+      emit(text);
     }
   }
-  return { announce, cancel };
+  function announceLatest(text) {
+    if (cooldown !== null) {
+      pending = text;
+      return;
+    }
+    if (timer !== null) timers.clearTimeout(timer);
+    timer = null;
+    emit(text);
+  }
+  return { announce, announceLatest, cancel };
 }

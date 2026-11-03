@@ -1,7 +1,9 @@
 import { events, requestJira, router, view } from '@forge/bridge';
 import { buildBurndown, fetchBurndownIssues, fetchStatusChanges } from '../burndown.mjs';
 import { todayInTimezone } from '../progress.mjs';
-import { issueCountButton } from '../drilldown.mjs';
+import { issueCountButton, splitOrderBy } from '../drilldown.mjs';
+import { approximateCount } from '../count.mjs';
+import { createBurndownLoader } from '../burndown-state.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
   GADGET_REFRESH, isForDashboard, statusKey } from '../shared.mjs';
 
@@ -104,9 +106,36 @@ async function main() {
       node('span', 'burndown-legend-ideal', 'Ideal to zero'));
     const summary = node('p', 'burndown-summary');
     const message = node('p', 'status', 'Waiting for the controller…');
-    message.setAttribute('role', 'status');
-    panel.append(heading, filterName, title, chartArea, legend, summary, message);
+    const live = node('p', 'visually-hidden');
+    live.setAttribute('role', 'status');
+    panel.append(heading, filterName, title, chartArea, legend, summary, message, live);
     root.replaceChildren(panel);
+
+    // Screen readers may not re-read identical text, so a repeat is cleared first and written
+    // on the next tick. A newer write cancels a pending repeat.
+    let liveTimer = null;
+    function writeLive(text) {
+      if (liveTimer !== null) clearTimeout(liveTimer);
+      liveTimer = null;
+      if (live.textContent !== text) {
+        live.textContent = text;
+        return;
+      }
+      live.textContent = '';
+      liveTimer = setTimeout(() => {
+        liveTimer = null;
+        live.textContent = text;
+      }, 100);
+    }
+    const loader = createBurndownLoader({
+      setText: text => { message.textContent = text; },
+      announce: writeLive,
+      cancelAnnounce: () => {
+        if (liveTimer !== null) clearTimeout(liveTimer);
+        liveTimer = null;
+      },
+      format: countFormatter,
+    });
 
     let active = null;
     let generation = 0;
@@ -117,47 +146,53 @@ async function main() {
       legend.hidden = true;
       summary.textContent = '';
       if (!active?.jql) {
-        message.textContent = 'Choose a filter in the Controller.';
+        loader.message('Choose a filter in the Controller.');
         return;
       }
       if (!active.startDate || !active.endDate) {
-        message.textContent = 'Set Start Date and End Date in the Controller.';
+        loader.message('Set Start Date and End Date in the Controller.');
         return;
       }
       const today = todayInTimezone(context.timezone);
       if (today < active.startDate) {
-        message.textContent = `The period starts on ${formatDate(active.startDate)}.`;
+        loader.message(`The period starts on ${formatDate(active.startDate)}.`);
         return;
       }
-      message.textContent = 'Loading issues and status history…';
+      const { jql, statuses, startDate, endDate } = active;
+      const run = loader.start();
+      // An ORDER BY-only JQL has no filter to estimate, so skip the request (as the Counter does).
+      if (splitOrderBy(jql).filter) {
+        approximateCount(requestJira, jql).then(run.approximate, error => console.warn(error));
+      }
       try {
-        const issues = await fetchBurndownIssues(requestJira, active.jql);
+        const issues = await fetchBurndownIssues(requestJira, jql, { onPage: run.page });
         if (current !== generation) return;
-        const changes = await fetchStatusChanges(requestJira, issues);
+        run.searchDone();
+        const changes = await fetchStatusChanges(requestJira, issues, { onProgress: run.history });
         if (current !== generation) return;
-        const result = buildBurndown(issues, changes, active.statuses,
-          active.startDate, active.endDate, today, context.timezone);
+        const result = buildBurndown(issues, changes, statuses,
+          startDate, endDate, today, context.timezone);
         if (result.kind === 'unmapped') {
-          message.textContent = `In the Controller, use Add missing status to set weights for: ${result.statuses.join(', ')}.`;
+          run.message(`In the Controller, use Add missing status to set weights for: ${result.statuses.join(', ')}.`);
         } else if (result.kind === 'empty') {
-          message.textContent = 'No matching issues.';
+          run.message('No matching issues.');
         } else if (result.kind === 'ready') {
           chartArea.replaceChildren(chartFor(result));
           legend.hidden = false;
           summary.replaceChildren(
             `${scoreFormatter.format(result.remaining)} remaining from ${scoreFormatter.format(result.baseline)} at the start of ${formatDate(result.startDate)} · `,
-            issueCountButton(router, countFormatter.format(result.total), active.jql,
+            issueCountButton(router, countFormatter.format(result.total), jql,
               `Open all ${result.total} matching issues`),
             ' issues in the current JQL scope',
           );
-          message.textContent = '';
+          run.ready();
         } else {
-          message.textContent = result.kind === 'invalid'
-            ? 'End Date is before Start Date.' : 'Set valid dates in the Controller.';
+          run.message(result.kind === 'invalid'
+            ? 'End Date is before Start Date.' : 'Set valid dates in the Controller.');
         }
       } catch (error) {
         if (current !== generation) return;
-        message.textContent = error.message || 'Could not load the burndown.';
+        run.fail(error);
       }
     }
 
@@ -191,7 +226,7 @@ async function main() {
       }
     }, 60000);
     setTimeout(() => {
-      if (!active) message.textContent = 'Add a Kinetic Dashboard Controller to this dashboard.';
+      if (!active) loader.message('Add a Kinetic Dashboard Controller to this dashboard.');
     }, 4000);
   } catch (error) {
     root.textContent = error.message || 'Could not load the burndown.';

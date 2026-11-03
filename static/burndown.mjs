@@ -36,10 +36,12 @@ function postJira(requestJira, path, body) {
   return postJiraRequest(requestJira, path, body, BURNDOWN_MESSAGES);
 }
 
-export async function fetchBurndownIssues(requestJira, jql) {
+// `onPage(loadedSoFar)`, if given, is called after each search page with the running total.
+export async function fetchBurndownIssues(requestJira, jql, { onPage } = {}) {
   const issues = [];
   for await (const page of searchPages(requestJira, jql, ['created', 'status', 'updated'], { messages: BURNDOWN_MESSAGES })) {
     issues.push(...page.issues);
+    onPage?.(issues.length);
   }
   return issues;
 }
@@ -127,7 +129,12 @@ function runBatches(batches, limit, run) {
 
 // Returns issueId -> status changes sorted by time. Issues whose `fields.updated` matches the
 // cached value reuse their cached history; only new or changed issues are sent to bulkfetch.
-export async function fetchStatusChanges(requestJira, issues, { cache = statusChangeCache } = {}) {
+// `onProgress({ done, total })`, if given, is called only when at least one issue needs a
+// request: once before the first request (done = issues served from the cache), then each time
+// a whole batch finishes, including all of its nextPageToken pages (done grows by its ID count).
+// It is never called when everything is cached, nor for batches that end after a failure.
+export async function fetchStatusChanges(requestJira, issues,
+  { cache = statusChangeCache, onProgress } = {}) {
   const changes = new Map();
   const updatedById = new Map();
   const toFetch = [];
@@ -147,8 +154,17 @@ export async function fetchStatusChanges(requestJira, issues, { cache = statusCh
   for (let offset = 0; offset < toFetch.length; offset += CHANGELOG_BATCH_SIZE) {
     batches.push(toFetch.slice(offset, offset + CHANGELOG_BATCH_SIZE));
   }
-  const results = await runBatches(batches, CHANGELOG_CONCURRENCY,
-    (ids, aborted) => fetchStatusChangeBatch(requestJira, ids, aborted));
+  const total = issues.length;
+  let done = total - toFetch.length;
+  if (onProgress && toFetch.length) onProgress({ done, total });
+  const results = await runBatches(batches, CHANGELOG_CONCURRENCY, async (ids, aborted) => {
+    const batch = await fetchStatusChangeBatch(requestJira, ids, aborted);
+    if (onProgress && !aborted()) {
+      done += ids.length;
+      onProgress({ done, total });
+    }
+    return batch;
+  });
 
   const fetched = new Map();
   for (const batch of results) {

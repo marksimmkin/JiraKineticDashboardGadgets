@@ -127,3 +127,34 @@ test('announcer announces the approximate count after 1000 ms and cancel clears 
     mock.timers.reset();
   }
 });
+
+test('announcer with minInterval throttles announceLatest with a trailing latest-wins write', () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const written = [];
+    const announcer = createAnnouncer(text => written.push(text), globalThis, { minInterval: 15000 });
+    announcer.announce('Start.');
+    announcer.announceLatest('A');
+    announcer.announceLatest('B');
+    mock.timers.tick(14999);
+    assert.deepEqual(written, ['Start.']);
+    mock.timers.tick(1);
+    assert.deepEqual(written, ['Start.', 'B']);
+    announcer.announceLatest('C');
+    mock.timers.tick(15000);
+    assert.deepEqual(written, ['Start.', 'B', 'C']);
+    mock.timers.tick(15000);
+    announcer.announceLatest('D');
+    assert.deepEqual(written, ['Start.', 'B', 'C', 'D'], 'written at once outside a cool-down');
+    announcer.announceLatest('E');
+    announcer.announce('Final.');
+    mock.timers.tick(60000);
+    assert.deepEqual(written, ['Start.', 'B', 'C', 'D', 'Final.'], 'announce drops the pending text');
+    const plain = createAnnouncer(text => written.push(text));
+    plain.announceLatest('X');
+    plain.announceLatest('Y');
+    assert.deepEqual(written.slice(-2), ['X', 'Y'], 'without minInterval nothing is throttled');
+  } finally {
+    mock.timers.reset();
+  }
+});

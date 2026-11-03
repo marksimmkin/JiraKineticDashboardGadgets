@@ -108,6 +108,7 @@ textarea.text-input { resize: vertical; min-height: 62px; }
 .burndown-legend-ideal::before { border-color: var(--ds-border-brand, #0c66e4) !important; border-top-style: dashed !important; }
 .burndown-summary { margin: 8px 0 0; color: var(--ds-text-subtle, #626f86); font-size: 12px; line-height: 1.5; }
 .burndown-summary:empty, .burndown .status:empty { display: none; }
+.burndown .status { font-variant-numeric: tabular-nums; }
 .status-pie, .issue-list, .user-list, .user-leaderboard { padding-block: 22px; }
 .pie-content { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 16px; width: 100%; }
 .pie-donut { position: relative; width: 100%; aspect-ratio: 1; border-radius: 50%; }
