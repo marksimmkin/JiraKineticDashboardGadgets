@@ -1,5 +1,7 @@
 // Splits JQL at its first top-level ORDER BY (outside quotes and brackets,
-// preceded by start-of-string or whitespace). Valid JQL has at most one.
+// preceded by start-of-string, whitespace, a closing bracket or a closing
+// quote). Valid JQL has at most one. At top level a preceding quote is always
+// a closing one, since an opening quote would put us inside the string.
 export function splitOrderBy(jql) {
   let quote = null;
   let escaped = false;
@@ -16,7 +18,7 @@ export function splitOrderBy(jql) {
     if (char === '"' || char === "'") { quote = char; continue; }
     if (char === '(') { depth += 1; continue; }
     if (char === ')') { depth = Math.max(0, depth - 1); continue; }
-    if (depth === 0 && (index === 0 || /\s/.test(jql[index - 1])) &&
+    if (depth === 0 && (index === 0 || /[\s)"']/.test(jql[index - 1])) &&
       /^ORDER\s+BY\b/i.test(jql.slice(index))) {
       orderAt = index;
       break;
