@@ -28,10 +28,14 @@ export function calendarProgress(startDate, endDate, today) {
   const current = dateOrdinal(today);
   if (start === null || end === null || current === null) return { kind: 'missing' };
   if (end < start) return { kind: 'invalid' };
-  const fraction = end === start
-    ? Number(current >= start)
-    : Math.min(1, Math.max(0, (current - start) / (end - start)));
-  return { kind: 'ready', fraction };
+  // Whole-day inclusive model: the period runs from Start Date 00:00 to End Date 24:00, so an
+  // n-day period has n = end - start + 1 and today counts as not yet elapsed. `day` is today's
+  // 1-based index while the period is running ('during') and null before or after it.
+  const days = end - start + 1;
+  const elapsed = Math.min(days, Math.max(0, current - start));
+  const phase = current < start ? 'before' : current > end ? 'after' : 'during';
+  const day = phase === 'during' ? current - start + 1 : null;
+  return { kind: 'ready', fraction: elapsed / days, day, days, phase };
 }
 
 export function weightedProgress(result, statuses) {

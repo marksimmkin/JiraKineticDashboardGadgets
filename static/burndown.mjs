@@ -247,14 +247,20 @@ export function buildBurndown(issues, changes, statuses, startDate, endDate, tod
   }
 
   if (missing.size) return { kind: 'unmapped', statuses: [...missing].sort((a, b) => a.localeCompare(b)) };
-  const actual = [{ date: startDate, remaining: baseline }];
+  // Each point is tagged with its kind and `offset`, the day boundary it sits on counted in days
+  // from Start Date 00:00: 0 for the baseline ('start'), and day - start + 1 (that day's 24:00)
+  // for an end-of-day score ('end') or today's current score while today <= End Date ('today').
+  const point = (day, remaining) => ({
+    date: dateFromDay(day), remaining, kind: day === current ? 'today' : 'end', offset: day - start + 1,
+  });
+  const actual = [{ date: startDate, remaining: baseline, kind: 'start', offset: 0 }];
   let remaining = baseline;
   for (const [day, delta] of [...deltas].sort((a, b) => a[0] - b[0])) {
     remaining += delta;
-    actual.push({ date: dateFromDay(day), remaining });
+    actual.push(point(day, remaining));
   }
-  if (actual.at(-1).date !== dateFromDay(lastObserved)) {
-    actual.push({ date: dateFromDay(lastObserved), remaining });
-  }
-  return { kind: 'ready', baseline, remaining, actual, startDate, endDate, total: issues.length };
+  if (actual.at(-1).offset !== lastObserved - start + 1) actual.push(point(lastObserved, remaining));
+  return {
+    kind: 'ready', baseline, remaining, actual, startDate, endDate, days: end - start + 1, total: issues.length,
+  };
 }

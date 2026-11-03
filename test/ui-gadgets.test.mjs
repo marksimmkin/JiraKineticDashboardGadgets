@@ -611,3 +611,134 @@ test('KDG-5 dashboard: Jira searches for load, dashboard refresh, a click and a 
       assert.equal(searches(g), 3, `${g.name}: load, dashboard refresh and click`);
     }
   }));
+
+// ---------------------------------------------------------------------------------------------
+// KDG-16: inclusive End Dates. The clock is 1 Jun 2026 (UTC) in every test here.
+
+// `extra` issues created on the given dates, after two issues created on 2 Jan 2026 (all To Do,
+// weight 1, with no status changes).
+function jiraWithCreated(...createdDates) {
+  const issues = makeIssues('A', 2 + createdDates.length);
+  createdDates.forEach((date, i) => {
+    issues[2 + i].fields.created = `${date}T10:00:00Z`;
+    issues[2 + i].fields.updated = `${date}T10:00:00Z`;
+  });
+  return (path, body) => {
+    if (path.includes('approximate-count')) return ok({ count: issues.length });
+    if (path.includes('search/jql')) return ok({ issues, isLast: true });
+    if (path.includes('changelog/bulkfetch')) {
+      return ok({ issueChangeLogs: body.issueIdsOrKeys.map(issueId => ({ issueId, changeHistories: [] })) });
+    }
+    return undefined;
+  };
+}
+
+async function burndownFor(startDate, endDate, ...createdDates) {
+  const g = await startGadget('burndown', { jira: jiraWithCreated(...createdDates) });
+  await select(g, { startDate, endDate });
+  await flush();
+  const chart = g.find('burndown-chart');
+  assert.ok(chart, g.root.textContent);
+  const markers = g.findAll('burndown-marker').map(m => ({
+    x: Number(m.find('burndown-point').getAttribute('cx')),
+    y: Number(m.find('burndown-point').getAttribute('cy')),
+    title: m.querySelector('title').textContent,
+    label: m.getAttribute('aria-label'),
+  }));
+  const ideal = Object.fromEntries(['x1', 'y1', 'x2', 'y2']
+    .map(k => [k, Number(chart.find('burndown-ideal').getAttribute(k))]));
+  return { g, chart, markers, ideal, path: chart.find('burndown-actual').getAttribute('d') };
+}
+
+// Chart geometry from chartFor: x runs 52..737, y runs 257 (0) up to 18 (the highest score).
+const LEFT = 52;
+const RIGHT = 737;
+const near = (actual, expected, message) =>
+  assert.ok(Math.abs(actual - expected) < 1e-6, `${message}: ${actual} != ${expected}`);
+
+test('KDG-16 burndown: points sit at day boundaries of a period that ends at End Date 24:00',
+  withTimers(async () => {
+    // 28 May to 5 Jun is 9 days. An issue created on 29 May steps up at the end of 29 May.
+    const { chart, markers, ideal, path } = await burndownFor('2026-05-28', '2026-06-05', '2026-05-29');
+    assert.equal(chart.getAttribute('aria-label'), 'Weighted remaining work from 28 May 2026 to the end of ' +
+      '5 Jun 2026. Starts at 2 and is 3 at the latest point.');
+    const xAt = offset => LEFT + offset / 9 * (RIGHT - LEFT);
+    assert.equal(markers.length, 3);
+    near(markers[0].x, LEFT, 'baseline at Start Date 00:00');
+    near(markers[1].x, xAt(2), 'end of 29 May');
+    near(markers[2].x, xAt(5), 'end of today (1 Jun)');
+    assert.deepEqual(ideal, { x1: LEFT, y1: 257 - 2 / 3 * 239, x2: RIGHT, y2: 257 });
+    assert.equal(path, `M ${LEFT} ${markers[0].y} H ${xAt(2)} V ${markers[1].y} H ${xAt(5)} V ${markers[2].y}`);
+    assert.deepEqual(markers.map(m => m.title), [
+      '28 May 2026 · start of day\nRemaining weighted score: 2\nIdeal remaining: 2\nDifference: 0 on ideal',
+      '29 May 2026 · end of day\nRemaining weighted score: 3\nIdeal remaining: 1.56\n' +
+        'Difference: 1.44 above ideal\nChange since previous point: +1',
+      '1 Jun 2026 · today so far\nRemaining weighted score: 3\nIdeal remaining: 0.89\n' +
+        'Difference: 2.11 above ideal\nChange since previous point: 0',
+    ]);
+    assert.deepEqual(markers.map(m => m.label), markers.map(m => m.title.replaceAll('\n', '. ')));
+    const dates = chart.findAll('burndown-date').map(t => [t.textContent, Number(t.getAttribute('x'))]);
+    assert.deepEqual(dates, [['28 May 2026', LEFT], ['5 Jun 2026', RIGHT]], 'axis shows Start and End Date');
+  }));
+
+test('KDG-16 burndown: a finished period puts the End Date score on the right edge', withTimers(async () => {
+  const { markers } = await burndownFor('2026-05-25', '2026-05-29', '2026-05-27');
+  assert.deepEqual(markers.map(m => m.x), [LEFT, LEFT + 3 / 5 * (RIGHT - LEFT), RIGHT]);
+  assert.match(markers[1].title, /^27 May 2026 · end of day\n.*\nIdeal remaining: 0\.8\n/);
+  assert.match(markers[2].title, /^29 May 2026 · end of day\nRemaining weighted score: 3\nIdeal remaining: 0\n/);
+}));
+
+test('KDG-16 burndown: a one-day period spans the full width', withTimers(async () => {
+  const { chart, markers, ideal, path } = await burndownFor('2026-06-01', '2026-06-01');
+  assert.equal(chart.getAttribute('aria-label'), 'Weighted remaining work from 1 Jun 2026 to the end of ' +
+    '1 Jun 2026. Starts at 2 and is 2 at the latest point.');
+  assert.deepEqual(markers.map(m => m.x), [LEFT, RIGHT], 'not collapsed onto the left edge');
+  assert.equal(ideal.x1, LEFT);
+  assert.equal(ideal.x2, RIGHT);
+  assert.equal(path, `M ${LEFT} ${markers[0].y} H ${RIGHT} V ${markers[0].y}`);
+  assert.match(markers[0].title, /^1 Jun 2026 · start of day\n.*\nIdeal remaining: 2\n/);
+  assert.match(markers[1].title, /^1 Jun 2026 · today so far\nRemaining weighted score: 2\nIdeal remaining: 0\n/);
+}));
+
+test('KDG-16 burndown: on the Start Date today is a flat segment across the first day', withTimers(async () => {
+  const { markers, path } = await burndownFor('2026-06-01', '2026-06-10');
+  const endOfToday = LEFT + 1 / 10 * (RIGHT - LEFT);
+  assert.deepEqual(markers.map(m => m.x), [LEFT, endOfToday]);
+  assert.equal(markers[0].y, markers[1].y);
+  assert.equal(path, `M ${LEFT} ${markers[0].y} H ${endOfToday} V ${markers[0].y}`);
+  assert.match(markers[1].title, /^1 Jun 2026 · today so far\n.*\nIdeal remaining: 1\.8\nDifference: 0\.2 above ideal\n/);
+}));
+
+test('KDG-16 progress-bar: time track valuetext and today marker over whole days', withTimers(async () => {
+  const g = await startGadget('progress-bar', { jira: jiraFor('A', 2) });
+  const [timeTrack, workTrack] = g.findAll('split-track');
+  const show = async (startDate, endDate) => {
+    await select(g, { startDate, endDate });
+    await flush();
+    return {
+      valuetext: timeTrack.getAttribute('aria-valuetext'),
+      valuenow: timeTrack.getAttribute('aria-valuenow'),
+      percent: g.findAll('progress-percent')[0].textContent,
+      line: g.find('today-line').style.left,
+      fill: g.find('split-fill').style.width,
+    };
+  };
+  assert.deepEqual(await show('2026-06-05', '2026-06-09'), { valuetext: '0%. The period starts on 5 Jun 2026.',
+    valuenow: '0', percent: '0%', line: '0%', fill: '0%' }, 'before the period');
+  assert.deepEqual(await show('2026-06-01', '2026-06-05'), { valuetext: '0%. Day 1 of 5.',
+    valuenow: '0', percent: '0%', line: '0%', fill: '0%' }, 'on the Start Date');
+  assert.deepEqual(await show('2026-05-31', '2026-06-02'), { valuetext: '33.3%. Day 2 of 3.',
+    valuenow: '33', percent: '33.3%', line: `${(1 / 3) * 100}%`, fill: `${(1 / 3) * 100}%` }, 'mid-period');
+  assert.deepEqual(await show('2026-05-28', '2026-06-01'), { valuetext: '80%. Day 5 of 5.',
+    valuenow: '80', percent: '80%', line: '80%', fill: '80%' }, 'on the End Date of a 5-day period');
+  assert.deepEqual(await show('2026-05-27', '2026-05-31'), { valuetext: '100%. The period ended on 31 May 2026.',
+    valuenow: '100', percent: '100%', line: '100%', fill: '100%' }, 'the day after the End Date');
+  assert.deepEqual(await show('2026-06-01', '2026-06-01'), { valuetext: '0%. Day 1 of 1.',
+    valuenow: '0', percent: '0%', line: '0%', fill: '0%' }, 'a one-day period on its day');
+  // The work track keeps a plain percentage.
+  assert.equal(workTrack.getAttribute('aria-valuenow'), '0');
+  assert.equal(workTrack.getAttribute('aria-valuetext'), null);
+  // Unavailable states still replace the valuetext with the reason.
+  await show('2026-06-05', '2026-06-01');
+  assert.equal(timeTrack.getAttribute('aria-valuetext'), 'End Date is before Start Date.');
+}));
