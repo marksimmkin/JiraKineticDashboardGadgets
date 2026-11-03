@@ -7,8 +7,8 @@ Keep the two tracks directly adjacent for comparison. Place the time label, perc
 ## Time progress (top half)
 
 - Use the selected filter's Start Date and End Date.
-- Fill elapsed calendar time in green and remaining time in red. Start Date is 0% and End Date is 100%; clamp dates outside the range.
-- Show Start Date at the left end, End Date at the right end, and today's date above the point where green meets red.
+- Fill elapsed calendar time in green and remaining time in red. The period includes End Date. Count whole days elapsed: Start Date is 0%, End Date of an n-day period is (n−1)/n, and the day after End Date is 100%; clamp dates outside the range.
+- Show Start Date at the left end, End Date at the right end, and today's date above the start of today, where green meets red.
 - Use the viewer's Jira timezone to determine today's date. If either date is missing, ask for dates in the Controller while allowing the work half to operate.
 
 ## Weighted work progress (bottom half)

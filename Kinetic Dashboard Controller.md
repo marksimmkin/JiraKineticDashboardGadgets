@@ -1,18 +1,16 @@
 A Jira dashboard widget that allows the user to edit the following information that will be used to determine which issues are evaluated by the other Kinetic Dashboard Gadgets:
 
 - A configure button when in Edit Mode with:
-	- A list of 'Filters', each fliter having:
+	- A list of 'Filters', each filter having:
 		- Name
 		- JQL
 		- Start Date (optional)
-		- End Date (optional)
-		- Start Date
-		- End Date
+		- End Date (optional; the period includes this day)
 	- A list of 'Statuses' with each status having a:
 		- Weight = Value between 0.0 - 1.0
 		- A Jira status chosen from the active-workflow list, or a manually entered missing status name copied from a gadget warning. Saved missing names remain editable if they no longer appear in Jira's list.
 - When in View Mode:
 	- A dropdown showing the list of filter names were the user can select each one
 	- Once the drop down is changed, the other gadgets in the dashboard update based on the new JQL filter
-	- The selected filter's Start Date and End Date are also passed to the other gadgets for optional use. They do not alter the JQL.
+	- The selected filter's Start Date and End Date are also passed to the other gadgets for optional use. A period runs from the start of Start Date to the end of End Date in the viewer's Jira timezone, and both dates may be the same day. They do not alter the JQL.
 	- Each selection sent carries a revision that changes on every filter click (even of the active filter) and on every dashboard or Controller refresh. Answers to a gadget's request for the current filter repeat the current revision, so gadgets that already loaded it don't load it again.

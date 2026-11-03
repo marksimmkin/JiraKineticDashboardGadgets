@@ -118,6 +118,9 @@ test('KDG-7 Controller: edit mode loads statuses and submits the configuration',
   assert.equal(c.bus.log.length, 0);
   const form = c.panel();
   assert.equal(form.tagName, 'FORM');
+  // KDG-16: the intro says the period includes the End Date.
+  assert.equal(form.find('muted').textContent, 'Name each filter and enter its JQL. Optional dates are ' +
+    'shared with other Kinetic gadgets. The period includes the End Date. Dates do not change the JQL count.');
   assert.equal(form.querySelectorAll('.filter-row').length, 2);
   form.dispatchEvent(Object.assign({ type: 'submit', preventDefault() {} }));
   await flush();

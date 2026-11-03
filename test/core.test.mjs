@@ -90,10 +90,19 @@ test('status chart combines equal status names across IDs and search pages', asy
 });
 
 test('calendar progress uses calendar dates and clamps at the boundaries', () => {
-  assert.deepEqual(calendarProgress('2026-09-28', '2026-10-02', '2026-09-27'), { kind: 'ready', fraction: 0 });
-  assert.deepEqual(calendarProgress('2026-09-28', '2026-10-02', '2026-09-30'), { kind: 'ready', fraction: 0.5 });
-  assert.deepEqual(calendarProgress('2026-09-28', '2026-10-02', '2026-10-03'), { kind: 'ready', fraction: 1 });
-  assert.deepEqual(calendarProgress('2026-10-01', '2026-10-01', '2026-10-01'), { kind: 'ready', fraction: 1 });
+  const ready = (fraction, day, days, phase) => ({ kind: 'ready', fraction, day, days, phase });
+  // Five-day period, 28 Sep to 2 Oct inclusive: whole days elapsed out of 5.
+  assert.deepEqual(calendarProgress('2026-09-28', '2026-10-02', '2026-09-20'), ready(0, null, 5, 'before'));
+  assert.deepEqual(calendarProgress('2026-09-28', '2026-10-02', '2026-09-27'), ready(0, null, 5, 'before'));
+  assert.deepEqual(calendarProgress('2026-09-28', '2026-10-02', '2026-09-28'), ready(0, 1, 5, 'during'));
+  assert.deepEqual(calendarProgress('2026-09-28', '2026-10-02', '2026-09-30'), ready(0.4, 3, 5, 'during'));
+  assert.deepEqual(calendarProgress('2026-09-28', '2026-10-02', '2026-10-02'), ready(0.8, 5, 5, 'during'));
+  assert.deepEqual(calendarProgress('2026-09-28', '2026-10-02', '2026-10-03'), ready(1, null, 5, 'after'));
+  assert.deepEqual(calendarProgress('2026-09-28', '2026-10-02', '2026-12-25'), ready(1, null, 5, 'after'));
+  // One-day period: 0% on its day, 100% from the day after.
+  assert.deepEqual(calendarProgress('2026-10-01', '2026-10-01', '2026-09-30'), ready(0, null, 1, 'before'));
+  assert.deepEqual(calendarProgress('2026-10-01', '2026-10-01', '2026-10-01'), ready(0, 1, 1, 'during'));
+  assert.deepEqual(calendarProgress('2026-10-01', '2026-10-01', '2026-10-02'), ready(1, null, 1, 'after'));
   assert.deepEqual(calendarProgress(null, '2026-10-02', '2026-10-01'), { kind: 'missing' });
   assert.deepEqual(calendarProgress('2026-10-02', '2026-10-01', '2026-10-01'), { kind: 'invalid' });
   assert.deepEqual(calendarProgress('2026-02-29', '2026-03-01', '2026-03-01'), { kind: 'missing' });

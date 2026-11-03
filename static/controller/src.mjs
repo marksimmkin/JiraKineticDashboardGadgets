@@ -30,7 +30,7 @@ async function edit(context) {
     a.name.localeCompare(b.name));
 
   const form = element('form', 'panel');
-  const intro = element('p', 'muted', 'Name each filter and enter its JQL. Optional dates are shared with other Kinetic gadgets; they do not change the JQL count.');
+  const intro = element('p', 'muted', 'Name each filter and enter its JQL. Optional dates are shared with other Kinetic gadgets. The period includes the End Date. Dates do not change the JQL count.');
   const filtersHeading = element('h2', 'config-heading', 'Filters');
   const rows = element('div', 'filter-list');
   const statusesHeading = element('h2', 'config-heading', 'Statuses');

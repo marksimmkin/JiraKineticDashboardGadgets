@@ -50,12 +50,12 @@ test('burndown includes scope additions and daily status changes', () => {
   assert.deepEqual(buildBurndown(issues, changes, statuses,
     '2026-10-01', '2026-10-05', '2026-10-04', 'UTC'), {
     kind: 'ready', baseline: 1, remaining: 0.5, total: 2,
-    startDate: '2026-10-01', endDate: '2026-10-05',
+    startDate: '2026-10-01', endDate: '2026-10-05', days: 5,
     actual: [
-      { date: '2026-10-01', remaining: 1 },
-      { date: '2026-10-02', remaining: 0.5 },
-      { date: '2026-10-03', remaining: 1 },
-      { date: '2026-10-04', remaining: 0.5 },
+      { date: '2026-10-01', remaining: 1, kind: 'start', offset: 0 },
+      { date: '2026-10-02', remaining: 0.5, kind: 'end', offset: 2 },
+      { date: '2026-10-03', remaining: 1, kind: 'end', offset: 3 },
+      { date: '2026-10-04', remaining: 0.5, kind: 'today', offset: 4 },
     ],
   });
 });
@@ -70,9 +70,9 @@ test('burndown uses viewer day boundaries and rejects unmapped historical status
   const result = buildBurndown(issues, changes, statuses,
     '2026-09-30', '2026-10-02', '2026-10-01', 'America/Los_Angeles');
   assert.deepEqual(result.actual, [
-    { date: '2026-09-30', remaining: 0 },
-    { date: '2026-09-30', remaining: 1 },
-    { date: '2026-10-01', remaining: 0 },
+    { date: '2026-09-30', remaining: 0, kind: 'start', offset: 0 },
+    { date: '2026-09-30', remaining: 1, kind: 'end', offset: 1 },
+    { date: '2026-10-01', remaining: 0, kind: 'today', offset: 2 },
   ]);
   assert.deepEqual(buildBurndown(issues, changes, [{ name: 'Done', weight: 0 }],
     '2026-09-30', '2026-10-02', '2026-10-01', 'America/Los_Angeles'), {
@@ -93,9 +93,9 @@ test('burndown shows progress made on the start date and subsequent day', () => 
   assert.equal(result.baseline, 1);
   assert.equal(result.remaining, 0);
   assert.deepEqual(result.actual, [
-    { date: '2026-10-15', remaining: 1 },
-    { date: '2026-10-15', remaining: 0.5 },
-    { date: '2026-10-16', remaining: 0 },
+    { date: '2026-10-15', remaining: 1, kind: 'start', offset: 0 },
+    { date: '2026-10-15', remaining: 0.5, kind: 'end', offset: 1 },
+    { date: '2026-10-16', remaining: 0, kind: 'today', offset: 2 },
   ]);
 });
 
@@ -112,7 +112,55 @@ test('burndown starts from the status at the start date and stops at the end dat
   assert.equal(result.baseline, 0.5);
   assert.equal(result.remaining, 0.5);
   assert.deepEqual(result.actual, [
-    { date: '2026-10-01', remaining: 0.5 },
-    { date: '2026-10-03', remaining: 0.5 },
+    { date: '2026-10-01', remaining: 0.5, kind: 'start', offset: 0 },
+    { date: '2026-10-03', remaining: 0.5, kind: 'end', offset: 3 },
   ]);
+  assert.equal(result.days, 3);
+});
+
+test('burndown points sit on day boundaries of an inclusive period', () => {
+  const issues = [{ id: '1', fields: { created: '2026-09-20T10:00:00Z', status: { name: 'To Do' } } }];
+  const noChanges = new Map();
+  const withChange = at => new Map([['1', [{ at: new Date(at), from: 'To Do', to: 'Done' }]]]);
+  const run = (changes, start, end, today) => buildBurndown(issues, changes, statuses, start, end, today, 'UTC');
+
+  // One-day period viewed on its day: baseline at the left edge, today so far at the right edge.
+  let result = run(noChanges, '2026-10-01', '2026-10-01', '2026-10-01');
+  assert.equal(result.days, 1);
+  assert.deepEqual(result.actual, [
+    { date: '2026-10-01', remaining: 1, kind: 'start', offset: 0 },
+    { date: '2026-10-01', remaining: 1, kind: 'today', offset: 1 },
+  ]);
+
+  // One-day period viewed after it ended, with a change on that day (the End Date) counted.
+  result = run(withChange('2026-10-01T15:00:00Z'), '2026-10-01', '2026-10-01', '2026-10-05');
+  assert.equal(result.remaining, 0);
+  assert.deepEqual(result.actual, [
+    { date: '2026-10-01', remaining: 1, kind: 'start', offset: 0 },
+    { date: '2026-10-01', remaining: 0, kind: 'end', offset: 1 },
+  ]);
+
+  // Today is the Start Date of a longer period: a flat today-so-far segment across the first day.
+  result = run(noChanges, '2026-10-01', '2026-10-05', '2026-10-01');
+  assert.equal(result.days, 5);
+  assert.deepEqual(result.actual, [
+    { date: '2026-10-01', remaining: 1, kind: 'start', offset: 0 },
+    { date: '2026-10-01', remaining: 1, kind: 'today', offset: 1 },
+  ]);
+
+  // Today after the End Date: a change on the End Date is included and sits on the right edge;
+  // later changes are not counted.
+  result = run(new Map([['1', [
+    { at: new Date('2026-10-05T23:00:00Z'), from: 'To Do', to: 'In Progress' },
+    { at: new Date('2026-10-06T09:00:00Z'), from: 'In Progress', to: 'Done' },
+  ]]]), '2026-10-01', '2026-10-05', '2026-10-09');
+  assert.equal(result.remaining, 0.5);
+  assert.deepEqual(result.actual, [
+    { date: '2026-10-01', remaining: 1, kind: 'start', offset: 0 },
+    { date: '2026-10-05', remaining: 0.5, kind: 'end', offset: 5 },
+  ]);
+
+  // Today after the End Date with no changes: the End Date's score closes the period.
+  result = run(noChanges, '2026-10-01', '2026-10-05', '2026-10-09');
+  assert.deepEqual(result.actual.at(-1), { date: '2026-10-05', remaining: 1, kind: 'end', offset: 5 });
 });

@@ -26,14 +26,22 @@ function formatDate(value) {
     ? 'Invalid date' : dateFormatter.format(date);
 }
 
-function showProgress(track, fill, percentNode, fraction) {
+function showProgress(track, fill, percentNode, fraction, valuetext) {
   const percent = fraction * 100;
   fill.style.width = `${percent}%`;
   track.classList.remove('unavailable');
   track.setAttribute('aria-valuenow', String(Math.round(percent)));
-  track.removeAttribute('aria-valuetext');
+  if (valuetext) track.setAttribute('aria-valuetext', valuetext);
+  else track.removeAttribute('aria-valuetext');
   percentNode.textContent = `${percentFormatter.format(percent)}%`;
   return percent;
+}
+
+// The time track's valuetext; the work track keeps the plain percentage.
+function timeValuetext(state, startDate, endDate) {
+  if (state.phase === 'before') return `0%. The period starts on ${formatDate(startDate)}.`;
+  if (state.phase === 'after') return `100%. The period ended on ${formatDate(endDate)}.`;
+  return `${percentFormatter.format(state.fraction * 100)}%. Day ${state.day} of ${state.days}.`;
 }
 
 function showUnavailable(track, fill, percentNode, reason) {
@@ -112,7 +120,7 @@ async function main() {
         timeMessage.textContent = reason;
         return;
       }
-      const percent = showProgress(timeTrack, timeFill, timePercent, state.fraction);
+      const percent = showProgress(timeTrack, timeFill, timePercent, state.fraction, timeValuetext(state, active.startDate, active.endDate));
       startLabel.textContent = formatDate(active.startDate);
       endLabel.textContent = formatDate(active.endDate);
       todayLabel.textContent = `Today · ${formatDate(today)}`;
