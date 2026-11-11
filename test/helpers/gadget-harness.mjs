@@ -400,6 +400,15 @@ export async function startGadget(name, options = {}) {
   };
 }
 
+// KDG-24: the Counter and List send the Controller's JQL narrowed to shown statuses, as
+// `(<filter>) AND (...) ORDER BY ...`. True when a request's JQL is `jql`'s filter, plain or
+// narrowed that way (any ORDER BY on either side is ignored).
+export function sameFilter(actual, jql) {
+  if (typeof actual !== 'string') return false;
+  const base = jql.replace(/ ORDER BY.*$/, '');
+  return actual.replace(/ ORDER BY.*$/, '') === base || actual.startsWith(`(${base}) AND (`);
+}
+
 // A FILTER_SELECTED payload as the Controller sends it (see selectedFilterPayload).
 export function selection(overrides = {}) {
   return {

@@ -11,6 +11,18 @@ function element(tag, className, text) {
   return node;
 }
 
+function categoryKey(status) {
+  const key = status?.statusCategory?.key;
+  return typeof key === 'string' && key ? key.toLowerCase() : null;
+}
+
+// 'done' + 'done' stays 'done'; Done with anything else is not Done ('other' when that is known).
+function mergeCategory(a, b) {
+  if (a === 'done' && b === 'done') return 'done';
+  if ((a && a !== 'done') || (b && b !== 'done')) return 'other';
+  return null;
+}
+
 async function edit(context) {
   const savedStatuses = configuredStatuses(context);
   let jiraStatuses = [];
@@ -21,11 +33,19 @@ async function edit(context) {
     const results = await response.json();
     if (!Array.isArray(results)) throw new Error();
     jiraStatuses = results.filter(status => statusKey(status?.name))
-      .map(status => ({ name: String(status.name).trim() }));
+      .map(status => ({ name: String(status.name).trim(), category: categoryKey(status) }));
   } catch {
     statusLoadError = 'Could not load Jira statuses. Saved statuses and missing names can still be edited.';
   }
-  const statusOptions = new Map(jiraStatuses.map(status => [statusKey(status.name), status]));
+  // Statuses with the same name are counted together. KDG-24: a name is 'done' only when every
+  // Jira status with it is Done; it is unknown (null) when that can't be told from the response.
+  const statusOptions = new Map();
+  for (const status of jiraStatuses) {
+    const key = statusKey(status.name);
+    const option = statusOptions.get(key);
+    if (!option) statusOptions.set(key, { ...status });
+    else option.category = mergeCategory(option.category, status.category);
+  }
   const sortedOptions = [...statusOptions.values()].sort((a, b) =>
     a.name.localeCompare(b.name));
 
@@ -34,7 +54,7 @@ async function edit(context) {
   const filtersHeading = element('h2', 'config-heading', 'Filters');
   const rows = element('div', 'filter-list');
   const statusesHeading = element('h2', 'config-heading', 'Statuses');
-  const statusHelp = element('p', 'muted', 'Choose Jira statuses or enter a missing status name exactly as a gadget shows it. Statuses with the same name are counted together. Weights are used by the progress, burndown, and leaderboard gadgets. Colours are used by the pie chart.');
+  const statusHelp = element('p', 'muted', 'Choose Jira statuses or enter a missing status name exactly as a gadget shows it. Statuses with the same name are counted together. Untick Show to hide a status from the counter, list, charts, and user gadgets for everyone. Done statuses start unticked, and Done statuses not listed here are also hidden. Weights are used by the progress, burndown, and leaderboard gadgets. Colours are used by the pie chart. The progress and burndown gadgets always include every status.');
   const statusRows = element('div', 'status-list');
   const statusWarning = element('p', 'muted', statusLoadError);
   const error = element('p', 'error');
@@ -116,29 +136,81 @@ async function edit(context) {
 
   function addStatusRow(status = { name: '', weight: 1 }, manual = false) {
     const row = element('div', 'status-row');
-    const statusLabel = element('label', 'field-label', manual ? 'Missing status name' : 'Jira status');
+    const statusLabel = element('label', 'field-label');
+    const statusLabelText = element('span', 'status-label-text', manual ? 'Missing status name' : 'Jira status');
+    statusLabel.append(statusLabelText);
+    let control;
     if (manual) {
-      const name = element('input', 'text-input status-name-input');
-      name.type = 'text';
-      name.required = true;
-      name.maxLength = 255;
-      name.placeholder = 'Exact name shown by the gadget';
-      name.value = status.name;
-      statusLabel.append(name);
+      control = element('input', 'text-input status-name-input');
+      control.type = 'text';
+      control.required = true;
+      control.maxLength = 255;
+      control.placeholder = 'Exact name shown by the gadget';
+      control.value = status.name;
     } else {
-      const select = element('select', 'text-input status-select');
+      control = element('select', 'text-input status-select');
       const placeholder = element('option', '', 'Choose a status');
       placeholder.value = '';
-      select.append(placeholder);
+      control.append(placeholder);
       for (const optionStatus of sortedOptions) {
         const option = element('option', '', optionStatus.name);
         option.value = statusKey(optionStatus.name);
-        select.append(option);
+        control.append(option);
       }
-      select.value = statusKey(status.name);
-      select.required = true;
-      statusLabel.append(select);
+      control.value = statusKey(status.name);
+      control.required = true;
     }
+    statusLabel.append(control);
+    const currentName = () => manual ? control.value.trim() : statusOptions.get(control.value)?.name ?? '';
+    // 'done', another category, or null when unknown (a manual row, or statuses did not load).
+    const currentCategory = () => manual ? null : statusOptions.get(control.value)?.category ?? null;
+
+    // KDG-24: the Show box. A saved explicit flag wins; otherwise an unflagged Done-category Jira
+    // status starts unticked and every other row ticked. `touched` is set once the user changes
+    // it; until then, choosing another status resets it to that status's default (or to the
+    // saved flag when the saved status is chosen again).
+    const showLabel = element('label', 'status-show');
+    const show = element('input', 'status-show-input');
+    show.type = 'checkbox';
+    showLabel.append(show, 'Show');
+    const savedShow = typeof status.show === 'boolean' ? status.show : undefined;
+    const savedKey = statusKey(status.name);
+    let touched = false;
+    show.addEventListener('change', () => { touched = true; });
+    show.checked = savedShow ?? currentCategory() !== 'done';
+    function updateShowLabel() {
+      const name = currentName();
+      show.setAttribute('aria-label', name ? `Show ${name} in gadgets` : 'Show this status in gadgets');
+    }
+    updateShowLabel();
+    if (manual) control.addEventListener('input', updateShowLabel);
+    else {
+      const done = element('span', 'issue-status-lozenge is-done status-done-marker', 'Done');
+      done.hidden = currentCategory() !== 'done';
+      statusLabelText.append(' ', done);
+      control.addEventListener('change', () => {
+        done.hidden = currentCategory() !== 'done';
+        // Back on the saved status, its saved flag applies again; any other status gets its default.
+        if (!touched) show.checked = control.value === savedKey && savedShow !== undefined
+          ? savedShow : currentCategory() !== 'done';
+        updateShowLabel();
+      });
+    }
+    // What to save: an explicit boolean, or undefined to leave `show` unset.
+    row.showValue = () => {
+      if (manual) {
+        // A box the user changed is always written. Untouched, a mistyped missing name in
+        // `status in (...)` would make Jira reject the JQL, so only an unticked box, or a saved
+        // `show: true` for the same name, is written.
+        if (touched) return show.checked;
+        if (!show.checked) return false;
+        return savedShow === true && statusKey(currentName()) === savedKey ? true : undefined;
+      }
+      // Written when the category is known or the user chose; a saved flag is kept while the
+      // row still has its saved status.
+      const keepSaved = savedShow !== undefined && control.value === savedKey;
+      return touched || keepSaved || currentCategory() !== null ? show.checked : undefined;
+    };
     const weightLabel = element('label', 'field-label', 'Weight (0–1)');
     const weight = element('input', 'text-input status-weight');
     weight.type = 'number';
@@ -158,7 +230,7 @@ async function edit(context) {
     remove.addEventListener('click', () => row.remove());
     const actions = element('div', 'row-actions');
     actions.append(orderButtons(row, statusRows, 'status'), remove);
-    row.append(statusLabel, weightLabel, colorLabel, actions);
+    row.append(statusLabel, weightLabel, colorLabel, showLabel, actions);
     statusRows.append(row);
   }
   savedStatuses.forEach(status => addStatusRow(status, !statusOptions.has(statusKey(status.name))));
@@ -175,11 +247,14 @@ async function edit(context) {
     }));
     const nextStatuses = [...statusRows.children].map(row => {
       const key = row.querySelector('.status-select')?.value;
-      return {
+      const entry = {
         name: row.querySelector('.status-name-input')?.value.trim() ?? statusOptions.get(key)?.name ?? '',
         weight: Number.parseFloat(row.querySelector('.status-weight').value),
         color: row.querySelector('.status-color').value,
       };
+      const show = row.showValue();
+      if (show !== undefined) entry.show = show;
+      return entry;
     });
     error.textContent = validateFilters(next) || validateStatuses(nextStatuses);
     if (error.textContent) return;

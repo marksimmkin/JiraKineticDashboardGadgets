@@ -46,6 +46,7 @@ class FakeElement extends FakeNode {
   set type(value) { this.attrs.type = value; }
   setAttribute(name, value) { this.attrs[name] = String(value); }
   getAttribute(name) { return this.attrs[name] ?? null; }
+  removeAttribute(name) { delete this.attrs[name]; }
   addEventListener(type, listener) { if (type === 'click') this.listeners.push(listener); }
   click() { this.listeners.forEach(listener => listener()); }
   appendChild(node) { node.remove(); node.parent = this; this.childNodes.push(node); return node; }
@@ -193,24 +194,25 @@ test('KDG-4: approximate then exact updates the same button in place and debounc
   const { approx, exact } = await g.select('Big', 'project = GAME ORDER BY rank');
   assert.equal(g.count(), '<div class="count">…</div>');
   assert.equal(g.live(), 'Counting visible issues…');
-  assert.deepEqual(approx.body, { jql: 'project = GAME' });
-  assert.equal(exact.body.jql, 'project = GAME ORDER BY rank');
+  // KDG-24: both counts use the JQL narrowed to shown statuses (Done hidden by default).
+  assert.deepEqual(approx.body, { jql: '(project = GAME) AND (statusCategory != Done)' });
+  assert.equal(exact.body.jql, '(project = GAME) AND (statusCategory != Done) ORDER BY rank');
   await g.respond(approx, { count: 1240 });
   const button = g.button();
-  assert.equal(g.count(), '<div class="count"><span class="count-qualifier">about</span> <button type="button" class="issue-count-link" aria-label="Open about 1,240 matching issues in Jira" title="Open matching issues in Jira">1,240</button></div>');
+  assert.equal(g.count(), '<div class="count"><span class="count-qualifier">about</span> <button type="button" class="issue-count-link" aria-label="Open about 1,240 matching issues in shown statuses in Jira" title="Open matching issues in Jira">1,240</button></div>');
   assert.equal(g.status(), 'issues · counting exactly…');
   await g.advance(999);
   assert.equal(g.live(), 'Counting visible issues…');
   await g.respond(exact, page(1241));
   assert.equal(g.button(), button, 'button node is kept so focus survives');
-  assert.equal(g.count(), '<div class="count"><button type="button" class="issue-count-link" aria-label="Open 1,241 matching issues in Jira" title="Open matching issues in Jira">1,241</button></div>');
+  assert.equal(g.count(), '<div class="count"><button type="button" class="issue-count-link" aria-label="Open 1,241 matching issues in shown statuses in Jira" title="Open matching issues in Jira">1,241</button></div>');
   assert.equal(g.status(), 'issues');
   assert.equal(g.live(), 'Exactly 1,241 issues.');
   await g.advance(5000);
   assert.equal(g.live(), 'Exactly 1,241 issues.', 'cancelled approximate announcement never fires');
   button.click();
   await g.flush();
-  assert.deepEqual(g.opened, ['/issues/?jql=project%20%3D%20GAME%20ORDER%20BY%20rank']);
+  assert.deepEqual(g.opened, [`/issues/?jql=${encodeURIComponent('(project = GAME) AND (statusCategory != Done) ORDER BY rank')}`]);
 }));
 
 test('KDG-4: the approximate announcement fires after 1000 ms (singular wording)', () => withGadget(async g => {
@@ -240,12 +242,12 @@ test('KDG-4: approximate failure is silent; exact failure keeps the approximate 
   assert.equal(g.status(), 'Counting visible issues…');
   assert.equal(g.warnings.length, 1);
   await g.respond(r.exact, page(0));
-  assert.equal(g.live(), 'Exactly 0 issues.');
+  assert.equal(g.live(), 'No issues in shown statuses.'); // KDG-24
 
   r = await g.refresh();
   await g.respond(r.approx, { count: 0 });
   await g.respond(r.exact, {}, 403);
-  assert.match(g.count(), /<span class="count-qualifier">about<\/span> <button[^>]*aria-label="Open about 0 matching issues in Jira"[^>]*>0<\/button>/);
+  assert.match(g.count(), /<span class="count-qualifier">about<\/span> <button[^>]*aria-label="Open about 0 matching issues in shown statuses in Jira"[^>]*>0<\/button>/);
   assert.equal(g.status(), 'Exact count unavailable. You cannot view issues for this filter.');
   assert.equal(g.live(), 'Exact count unavailable. You cannot view issues for this filter.');
   await g.advance(2000);
@@ -270,14 +272,16 @@ test('KDG-4: results for an older filter never overwrite a newer one', () => wit
   assert.equal(g.filterName(), 'B');
   await g.respond(b.approx, { count: 22 });
   await g.respond(b.exact, page(20));
-  assert.match(g.count(), /aria-label="Open 20 matching issues in Jira"[^>]*>20</);
+  assert.match(g.count(), /aria-label="Open 20 matching issues in shown statuses in Jira"[^>]*>20</);
   assert.equal(g.live(), 'Exactly 20 issues.');
 }));
 
-test('KDG-4: an order-only filter skips the approximate request', () => withGadget(async g => {
+// KDG-24: the shown-status clause gives an order-only filter a JQL filter, so the approximate
+// count is now requested for it (before KDG-24 it was skipped).
+test('KDG-4: an order-only filter gets an approximate count of shown statuses', () => withGadget(async g => {
   const { approx, exact } = await g.select('Order', 'ORDER BY rank');
-  assert.equal(approx, undefined);
-  assert.equal(g.pending.length, 1);
+  assert.deepEqual(approx.body, { jql: '(statusCategory != Done)' });
+  assert.equal(exact.body.jql, '(statusCategory != Done) ORDER BY rank');
   await g.respond(exact, page(7));
   assert.equal(g.live(), 'Exactly 7 issues.');
 }));

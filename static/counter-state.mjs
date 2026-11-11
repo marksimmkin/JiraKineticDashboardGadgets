@@ -3,6 +3,8 @@
 
 export const COUNTING_TEXT = 'Counting visible issues…';
 export const ANNOUNCE_APPROXIMATE_DELAY = 1000;
+// KDG-24: the count covers only statuses the Controller shows.
+export const NO_SHOWN_ISSUES_TEXT = 'No issues in shown statuses.';
 
 // approximate: number | null; exact: number | null; exactError: Error | null.
 export function initialCount() {
@@ -39,16 +41,16 @@ export function counterView(state, format = new Intl.NumberFormat()) {
     const noun = exact === 1 ? 'issue' : 'issues';
     return {
       phase: 'exact', placeholder: null, number: n, qualifier: false,
-      label: `Open ${n} matching ${noun} in Jira`,
-      status: noun,
-      announcement: `Exactly ${n} ${noun}.`, announceDelay: 0,
+      label: `Open ${n} matching ${noun} in shown statuses in Jira`,
+      status: exact === 0 ? NO_SHOWN_ISSUES_TEXT : noun,
+      announcement: exact === 0 ? NO_SHOWN_ISSUES_TEXT : `Exactly ${n} ${noun}.`, announceDelay: 0,
     };
   }
   if (approximate !== null) {
     const n = format.format(approximate);
     const noun = approximate === 1 ? 'issue' : 'issues';
     const base = { number: n, placeholder: null, qualifier: true,
-      label: `Open about ${n} matching ${noun} in Jira` };
+      label: `Open about ${n} matching ${noun} in shown statuses in Jira` };
     if (exactError) {
       const message = `Exact count unavailable. ${errorText(exactError)}`;
       return { ...base, phase: 'approximate-only', status: message,

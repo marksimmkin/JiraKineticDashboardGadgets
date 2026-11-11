@@ -1,6 +1,9 @@
 import { events, requestJira, router, view } from '@forge/bridge';
 import { configuredColumns, formatIssueField, orderedJql, searchIssuePage } from '../issue-data.mjs';
 import { issueCountButton } from '../drilldown.mjs';
+import { hiddenNote, statusVisibility, visibilityJql } from '../status-visibility.mjs';
+import { createHiddenNote } from '../status-note.mjs';
+import { statusNameError, trackBadRequest } from '../status-name-error.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
   GADGET_REFRESH, createSelectionTracker, isForDashboard } from '../shared.mjs';
 
@@ -160,7 +163,8 @@ async function display(context) {
   more.hidden = true;
   const message = node('p', 'status', 'Waiting for the controller…');
   message.setAttribute('role', 'status');
-  panel.append(heading, filterName, scroll, more, message);
+  const note = createHiddenNote();
+  panel.append(heading, filterName, note.element, scroll, more, message);
   root.replaceChildren(panel);
 
   let active = null;
@@ -227,9 +231,10 @@ async function display(context) {
     loading = true;
     more.disabled = true;
     message.textContent = 'Loading matching issues…';
+    const pageJira = trackBadRequest(requestJira);
     try {
-      const query = sort ? orderedJql(active.jql, sort.field, sort.direction) : active.jql;
-      const page = await searchIssuePage(requestJira, query, fields, nextPageToken, 50);
+      const query = sort ? orderedJql(active.shownJql, sort.field, sort.direction) : active.shownJql;
+      const page = await searchIssuePage(pageJira.requestJira, query, fields, nextPageToken, 50);
       if (current !== generation) return;
       appendIssues(page.issues);
       loaded += page.issues.length;
@@ -241,14 +246,16 @@ async function display(context) {
       }
       more.hidden = page.isLast === true;
       if (loaded) message.replaceChildren(
-        issueCountButton(router, numberFormat.format(loaded), active.jql,
-          `Open the full Jira list for this filter; ${loaded} issues loaded here`),
+        issueCountButton(router, numberFormat.format(loaded), active.shownJql,
+          `Open the full Jira list for shown statuses; ${loaded} issues loaded here`),
         ` issues loaded here${more.hidden ? '' : ' · more available'} · click count for the full Jira list`,
       );
-      else message.textContent = 'No matching issues.';
+      else message.textContent = 'No issues in shown statuses.';
     } catch (error) {
       if (current !== generation) return;
-      message.textContent = error.message || 'Could not load the issue list.';
+      // With a column sort the 400 may be the sort field, so the existing message is kept.
+      const shown = sort ? error : statusNameError(error, pageJira, active.visibility);
+      message.textContent = shown.message || 'Could not load the issue list.';
     } finally {
       if (current === generation) {
         loading = false;
@@ -266,9 +273,11 @@ async function display(context) {
     body.replaceChildren();
     more.hidden = true;
     if (!active?.jql) {
+      note.show(null);
       message.textContent = 'Choose a filter in the Controller.';
       return;
     }
+    note.show(hiddenNote(active.visibility, { includeUnlistedDoneClause: true }));
     void loadPage();
   }
 
@@ -276,7 +285,10 @@ async function display(context) {
   const selection = createSelectionTracker({ gadgetId: gadgetId(context), onFallback: () => refresh() });
   await events.on(FILTER_SELECTED, payload => {
     if (!isForDashboard(payload, id) || !selection.accept(payload)) return;
-    active = { name: payload.name, jql: payload.jql };
+    // KDG-24: rows, sorting and the count link use the JQL narrowed to shown statuses.
+    const visibility = statusVisibility(payload);
+    active = { name: payload.name, jql: payload.jql, visibility,
+      shownJql: payload.jql ? visibilityJql(payload.jql, visibility) : payload.jql };
     filterName.textContent = active.name ?? '';
     refresh();
   });

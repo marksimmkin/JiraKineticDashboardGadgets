@@ -1,7 +1,9 @@
 import { events, requestJira, router, view } from '@forge/bridge';
 import { countIssuesByStatus } from '../status-counts.mjs';
 import { issueCountButton, narrowJql, statusClause, statusesClause } from '../drilldown.mjs';
-import { createStatusFilter } from '../status-filter.mjs';
+import { chartStatuses, emptyChartMessage } from '../chart-statuses.mjs';
+import { hiddenNote, statusVisibility } from '../status-visibility.mjs';
+import { createHiddenNote } from '../status-note.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
   GADGET_REFRESH, createSelectionTracker, isForDashboard, STATUS_COLORS, statusKey, validStatusColor } from '../shared.mjs';
 
@@ -31,8 +33,8 @@ async function main() {
     let active = null;
     let generation = 0;
     let cachedResult = null;
-    const statusFilter = createStatusFilter(id, gadgetId(context), render);
-    panel.append(heading, filterName, statusFilter.element, content, message);
+    const note = createHiddenNote();
+    panel.append(heading, filterName, note.element, content, message);
     root.replaceChildren(panel);
 
     function showPie(result, statuses) {
@@ -44,13 +46,8 @@ async function main() {
       }));
       const shown = slices.reduce((sum, slice) => sum + slice.count, 0);
       if (!shown) {
-        if (result.total) message.replaceChildren(
-          'No issues are in selected statuses (',
-          issueCountButton(router, numberFormat.format(result.total), active.jql,
-            `Open all ${result.total} matching issues`),
-          ' matching issues).',
-        );
-        else message.textContent = 'No matching issues.';
+        emptyChartMessage(message, { allHidden: false, total: result.total, jql: active.jql, router,
+          format: numberFormat });
         return;
       }
       let offset = 0;
@@ -68,7 +65,7 @@ async function main() {
         .map(slice => `${slice.name}: ${slice.count}`).join(', '));
       const center = issueCountButton(router, numberFormat.format(shown),
         narrowJql(active.jql, [statusesClause(slices.filter(slice => slice.count))]),
-        `Open ${shown} issues in selected statuses`);
+        `Open ${shown} issues in shown statuses`);
       center.classList.add('pie-center');
       graphic.append(center);
       const legend = node('div', 'pie-legend');
@@ -88,12 +85,12 @@ async function main() {
       message.replaceChildren(
         issueCountButton(router, numberFormat.format(shown),
           narrowJql(active.jql, [statusesClause(slices.filter(slice => slice.count))]),
-          `Open ${shown} issues in selected statuses`),
+          `Open ${shown} issues in shown statuses`),
         ...(shown === result.total ? [' matching issues'] : [
           ' of ',
           issueCountButton(router, numberFormat.format(result.total), active.jql,
             `Open all ${result.total} matching issues`),
-          ' matching issues in selected statuses',
+          ' matching issues in shown statuses',
         ]),
       );
     }
@@ -101,9 +98,12 @@ async function main() {
     function render() {
       content.replaceChildren();
       if (!cachedResult || !active) return;
-      const visible = statusFilter.visibleStatuses();
-      if (!visible.length) {
-        message.textContent = 'Select at least one status.';
+      const { visible, note: noteModel, allHidden } = chartStatuses(active.statuses, cachedResult,
+        active.visibility);
+      note.show(noteModel);
+      if (allHidden) {
+        emptyChartMessage(message, { allHidden, total: cachedResult.total, jql: active.jql, router,
+          format: numberFormat });
         return;
       }
       showPie(cachedResult, visible);
@@ -113,6 +113,7 @@ async function main() {
       const current = ++generation;
       cachedResult = null;
       content.replaceChildren();
+      note.show(null);
       if (!active?.jql) {
         message.textContent = 'Choose a filter in the Controller.';
         return;
@@ -121,10 +122,11 @@ async function main() {
         message.textContent = 'Add statuses in the Controller to see the pie chart.';
         return;
       }
+      note.show(hiddenNote(active.visibility));
       message.textContent = 'Counting matching issues…';
       try {
         const result = await countIssuesByStatus(requestJira, active.jql, active.statuses,
-          { isCurrent: () => current === generation });
+          { isCurrent: () => current === generation, visibility: active.visibility });
         if (current !== generation) return;
         cachedResult = result;
         render();
@@ -142,8 +144,8 @@ async function main() {
         jql: payload.jql,
         statuses: Array.isArray(payload.statuses)
           ? payload.statuses.filter(status => statusKey(status?.name)) : [],
+        visibility: statusVisibility(payload),
       };
-      statusFilter.setStatuses(active.statuses);
       filterName.textContent = active.name ?? '';
       void refresh();
     });

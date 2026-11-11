@@ -1,7 +1,8 @@
 import { events, requestJira, router, view } from '@forge/bridge';
 import { searchAllIssues, summarizeAssignees } from '../issue-data.mjs';
-import { assigneeClause, issueCountButton, narrowJql, statusClause } from '../drilldown.mjs';
-import { createStatusFilter, matchingStatusIssues, visibleIssueJql } from '../status-filter.mjs';
+import { assigneeClause, issueCountButton, narrowJql, statusClause, statusesClause } from '../drilldown.mjs';
+import { hiddenNote, shownIssues, statusVisibility } from '../status-visibility.mjs';
+import { createHiddenNote } from '../status-note.mjs';
 import { createUserMetricSelect, formatMetric, metricLabel, metricValue } from '../user-metrics.mjs';
 import { sortedUserRows } from '../user-list-sort.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
@@ -32,14 +33,14 @@ async function main() {
     let active = null;
     let generation = 0;
     let loadedIssues = null;
-    let allStatuses = [];
     let sort = { column: 'total', direction: 'descending' };
-    const statusFilter = createStatusFilter(id, gadgetId(context), render);
+    const note = createHiddenNote();
     const metricSelect = createUserMetricSelect(id, gadgetId(context), render);
-    panel.append(heading, filterName, statusFilter.element, metricSelect.element, tableArea, message);
+    panel.append(heading, filterName, note.element, metricSelect.element, tableArea, message);
     root.replaceChildren(panel);
 
-    function showTable(result, visibleJql) {
+    function showTable(result, visibleJql, narrowed) {
+      const scope = narrowed ? ' in shown statuses' : '';
       const metric = metricSelect.selected();
       const table = node('table', 'dashboard-table user-status-table');
       const head = node('thead');
@@ -96,22 +97,23 @@ async function main() {
       tableArea.replaceChildren(table);
       message.replaceChildren(
         issueCountButton(router, numberFormat.format(result.total), visibleJql,
-          `Open ${result.total} issues in selected statuses`),
-        ` issues in selected statuses across ${numberFormat.format(rows.length)} assignees, including Unassigned where applicable`,
+          `Open ${result.total} issues${scope}`),
+        ` issues${scope} across ${numberFormat.format(rows.length)} assignees, including Unassigned where applicable`,
       );
     }
 
     function render() {
       tableArea.replaceChildren();
       if (!loadedIssues?.length || !active) return;
-      const visible = statusFilter.visibleStatuses();
-      if (!visible.length) {
-        message.textContent = 'Select at least one status.';
-        return;
-      }
-      const selectedIssues = matchingStatusIssues(loadedIssues, visible);
+      // KDG-24: leave out issues in statuses the Controller hides.
+      const selectedIssues = shownIssues(loadedIssues, active.visibility);
       if (!selectedIssues.length) {
-        message.textContent = 'No issues are in the selected statuses.';
+        message.replaceChildren(
+          'No issues are in shown statuses (',
+          issueCountButton(router, numberFormat.format(loadedIssues.length), active.jql,
+            `Open all ${loadedIssues.length} matching issues`),
+          ' matching issues).',
+        );
         return;
       }
       const result = summarizeAssignees(selectedIssues, active.statuses);
@@ -119,19 +121,20 @@ async function main() {
         message.textContent = `In the Controller, use Add missing status to set weights for: ${result.unmapped.join(', ')}.`;
         return;
       }
-      showTable(result, visibleIssueJql(active.jql, allStatuses, visible));
+      const narrowed = selectedIssues.length < loadedIssues.length;
+      showTable(result, narrowed ? narrowJql(active.jql, [statusesClause(result.statuses)]) : active.jql, narrowed);
     }
 
     async function refresh() {
       const current = ++generation;
       loadedIssues = null;
-      allStatuses = [];
-      statusFilter.setStatuses([]);
+      note.show(null);
       tableArea.replaceChildren();
       if (!active?.jql) {
         message.textContent = 'Choose a filter in the Controller.';
         return;
       }
+      note.show(hiddenNote(active.visibility));
       message.textContent = 'Counting issues by assignee…';
       try {
         const issues = await searchAllIssues(requestJira, active.jql, ['assignee', 'status', 'timetracking'],
@@ -142,8 +145,8 @@ async function main() {
           return;
         }
         loadedIssues = issues;
-        allStatuses = summarizeAssignees(issues, active.statuses).statuses;
-        statusFilter.setStatuses(allStatuses);
+        note.show(hiddenNote(active.visibility,
+          { discovered: summarizeAssignees(issues, active.statuses).statuses }));
         render();
       } catch (error) {
         if (current !== generation) return;
@@ -159,6 +162,7 @@ async function main() {
         jql: payload.jql,
         statuses: Array.isArray(payload.statuses)
           ? payload.statuses.filter(status => statusKey(status?.name)) : [],
+        visibility: statusVisibility(payload),
       };
       filterName.textContent = active.name ?? '';
       void refresh();

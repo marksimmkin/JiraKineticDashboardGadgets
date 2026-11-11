@@ -22,7 +22,7 @@ test('approximate state is marked about, formatted, and its announcement is debo
   assert.equal(shown.phase, 'approximate');
   assert.equal(shown.number, '1,240');
   assert.equal(shown.qualifier, true);
-  assert.equal(shown.label, 'Open about 1,240 matching issues in Jira');
+  assert.equal(shown.label, 'Open about 1,240 matching issues in shown statuses in Jira');
   assert.equal(shown.status, 'issues · counting exactly…');
   assert.equal(shown.announcement, 'About 1,240 issues. Counting exactly.');
   assert.equal(shown.announceDelay, ANNOUNCE_APPROXIMATE_DELAY);
@@ -31,13 +31,13 @@ test('approximate state is marked about, formatted, and its announcement is debo
 
 test('approximate singular and zero wording', () => {
   const one = view(withApproximate(initialCount(), 1));
-  assert.equal(one.label, 'Open about 1 matching issue in Jira');
+  assert.equal(one.label, 'Open about 1 matching issue in shown statuses in Jira');
   assert.equal(one.status, 'issue · counting exactly…');
   assert.equal(one.announcement, 'About 1 issue. Counting exactly.');
   const zero = view(withApproximate(initialCount(), 0));
   assert.equal(zero.number, '0');
   assert.equal(zero.qualifier, true);
-  assert.equal(zero.label, 'Open about 0 matching issues in Jira');
+  assert.equal(zero.label, 'Open about 0 matching issues in shown statuses in Jira');
 });
 
 test('exact state removes the qualifier and uses formatted wording', () => {
@@ -45,14 +45,22 @@ test('exact state removes the qualifier and uses formatted wording', () => {
   assert.equal(shown.phase, 'exact');
   assert.equal(shown.number, '1,240');
   assert.equal(shown.qualifier, false);
-  assert.equal(shown.label, 'Open 1,240 matching issues in Jira');
+  assert.equal(shown.label, 'Open 1,240 matching issues in shown statuses in Jira');
   assert.equal(shown.status, 'issues');
   assert.equal(shown.announcement, 'Exactly 1,240 issues.');
   assert.equal(shown.announceDelay, 0);
   const one = view(withExact(initialCount(), 1));
-  assert.equal(one.label, 'Open 1 matching issue in Jira');
+  assert.equal(one.label, 'Open 1 matching issue in shown statuses in Jira');
   assert.equal(one.status, 'issue');
   assert.equal(one.announcement, 'Exactly 1 issue.');
+});
+
+test('KDG-24: an exact count of 0 says no issues are in shown statuses', () => {
+  const zero = view(withExact(initialCount(), 0));
+  assert.equal(zero.number, '0');
+  assert.equal(zero.label, 'Open 0 matching issues in shown statuses in Jira');
+  assert.equal(zero.status, 'No issues in shown statuses.');
+  assert.equal(zero.announcement, 'No issues in shown statuses.');
 });
 
 test('approximate equal to exact still moves to the exact state', () => {
@@ -76,7 +84,7 @@ test('exact failure after approximate keeps the approximate count with a message
   assert.equal(shown.phase, 'approximate-only');
   assert.equal(shown.number, '1,240');
   assert.equal(shown.qualifier, true);
-  assert.equal(shown.label, 'Open about 1,240 matching issues in Jira');
+  assert.equal(shown.label, 'Open about 1,240 matching issues in shown statuses in Jira');
   assert.equal(shown.status, 'Exact count unavailable. Jira is down.');
   assert.equal(shown.announcement, 'Exact count unavailable. Jira is down.');
   assert.equal(shown.announceDelay, 0);
