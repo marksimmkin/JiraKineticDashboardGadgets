@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test, { mock } from 'node:test';
 import { FILTER_REQUEST, FILTER_SELECTED, GADGET_REFRESH, REFRESH_ANSWERED_MS } from '../static/shared.mjs';
-import { createBus, fail, flush, ok, selection, startGadget } from './helpers/gadget-harness.mjs';
+import { createBus, fail, flush, ok, sameFilter, selection, startGadget } from './helpers/gadget-harness.mjs';
 
 const ADD_CONTROLLER = 'Add a Kinetic Dashboard Controller to this dashboard.';
 const GADGETS = ['status-chart', 'status-pie', 'progress-bar', 'burndown', 'counter', 'dates',
@@ -205,7 +205,7 @@ for (const name of WALKING) {
     const g = await startGadget(name);
     await select(g, { revision: 'n:0', jql: 'project = OLD' });
     await flush();
-    const old = g.requests.find(r => isSearch(r) && r.body?.jql === 'project = OLD');
+    const old = g.requests.find(r => isSearch(r) && sameFilter(r.body?.jql, 'project = OLD'));
     await select(g, { revision: 'n:1', name: 'New', jql: 'project = NEW' });
     await flush();
     for (const r of g.requests.filter(r => !r.done && r !== old)) r.resolve(jira(r.path, r.body));

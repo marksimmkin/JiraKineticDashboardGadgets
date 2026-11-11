@@ -1,7 +1,9 @@
 import { events, requestJira, router, view } from '@forge/bridge';
 import { countIssuesByStatus } from '../status-counts.mjs';
 import { issueCountButton, narrowJql, statusClause, statusesClause } from '../drilldown.mjs';
-import { createStatusFilter } from '../status-filter.mjs';
+import { chartStatuses, emptyChartMessage } from '../chart-statuses.mjs';
+import { hiddenNote, statusVisibility } from '../status-visibility.mjs';
+import { createHiddenNote } from '../status-note.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
   GADGET_REFRESH, createSelectionTracker, isForDashboard, statusKey } from '../shared.mjs';
 
@@ -31,8 +33,8 @@ async function main() {
     let active = null;
     let generation = 0;
     let cachedResult = null;
-    const statusFilter = createStatusFilter(id, gadgetId(context), render);
-    panel.append(heading, filterName, statusFilter.element, bars, message);
+    const note = createHiddenNote();
+    panel.append(heading, filterName, note.element, bars, message);
     root.replaceChildren(panel);
 
     function showBars(statuses, result) {
@@ -63,26 +65,29 @@ async function main() {
     function render() {
       bars.replaceChildren();
       if (!cachedResult || !active) return;
-      const visible = statusFilter.visibleStatuses();
-      if (!visible.length) {
-        message.textContent = 'Select at least one status.';
+      const { visible, note: noteModel, allHidden } = chartStatuses(active.statuses, cachedResult,
+        active.visibility);
+      note.show(noteModel);
+      const shown = visible.reduce((sum, status) =>
+        sum + (cachedResult.counts[statusKey(status.name)] ?? 0), 0);
+      if (allHidden || !shown) {
+        emptyChartMessage(message, { allHidden, total: cachedResult.total, jql: active.jql, router,
+          format: numberFormat });
         return;
       }
       showBars(visible, cachedResult);
-      const shown = visible.reduce((sum, status) =>
-        sum + (cachedResult.counts[statusKey(status.name)] ?? 0), 0);
       const configured = visible.filter(status =>
-        !shown || (cachedResult.counts[statusKey(status.name)] ?? 0) > 0).map(status => ({
+        (cachedResult.counts[statusKey(status.name)] ?? 0) > 0).map(status => ({
         name: status.name, ids: cachedResult.statusIds[statusKey(status.name)] ?? [],
       }));
       message.replaceChildren(
         issueCountButton(router, numberFormat.format(shown),
           narrowJql(active.jql, [statusesClause(configured)]),
-          `Open ${shown} issues in selected statuses`),
+          `Open ${shown} issues in shown statuses`),
         ' of ',
         issueCountButton(router, numberFormat.format(cachedResult.total), active.jql,
           `Open all ${cachedResult.total} matching issues`),
-        ' issues in selected statuses',
+        ' issues in shown statuses',
       );
     }
 
@@ -90,6 +95,7 @@ async function main() {
       const current = ++generation;
       cachedResult = null;
       bars.replaceChildren();
+      note.show(null);
       if (!active?.jql) {
         filterName.textContent = '';
         message.textContent = 'Configure a filter in the controller.';
@@ -100,10 +106,11 @@ async function main() {
         message.textContent = 'Add statuses in the controller to see the chart.';
         return;
       }
+      note.show(hiddenNote(active.visibility));
       message.textContent = 'Counting visible issues…';
       try {
         const result = await countIssuesByStatus(requestJira, active.jql, active.statuses,
-          { isCurrent: () => current === generation });
+          { isCurrent: () => current === generation, visibility: active.visibility });
         if (current !== generation) return;
         cachedResult = result;
         render();
@@ -122,8 +129,8 @@ async function main() {
         statuses: Array.isArray(payload.statuses)
           ? payload.statuses.filter(status => statusKey(status?.name))
           : [],
+        visibility: statusVisibility(payload),
       };
-      statusFilter.setStatuses(active.statuses);
       void refresh();
     });
     await events.on(GADGET_REFRESH, payload => {

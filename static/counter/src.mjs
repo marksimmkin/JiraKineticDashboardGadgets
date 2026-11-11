@@ -3,6 +3,9 @@ import { approximateCount, countIssues } from '../count.mjs';
 import { counterView, createAnnouncer, initialCount, withApproximate, withExact,
   withExactError } from '../counter-state.mjs';
 import { issueCountButton } from '../drilldown.mjs';
+import { hiddenNote, statusVisibility, visibilityJql } from '../status-visibility.mjs';
+import { createHiddenNote } from '../status-note.mjs';
+import { statusNameError, trackBadRequest } from '../status-name-error.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
   GADGET_REFRESH, createSelectionTracker, isForDashboard } from '../shared.mjs';
 
@@ -15,11 +18,12 @@ async function main() {
     const id = dashboardId(context);
     if (!id) throw new Error('Dashboard context is unavailable.');
 
-    root.innerHTML = '<section class="panel counter"><p class="eyebrow">Issues in filter</p><div class="count">—</div><p class="filter-name"></p><p class="status">Waiting for the controller…</p><p class="visually-hidden" role="status"></p></section>';
+    root.innerHTML = '<section class="panel counter"><p class="eyebrow">Issues in filter</p><div class="count">—</div><p class="filter-name"></p><p class="status-hidden-note"></p><p class="status">Waiting for the controller…</p><p class="visually-hidden" role="status"></p></section>';
     const count = root.querySelector('.count');
     const filterName = root.querySelector('.filter-name');
     const status = root.querySelector('.status');
     const live = root.querySelector('.visually-hidden');
+    const note = createHiddenNote(root.querySelector('.status-hidden-note'));
     const announcer = createAnnouncer(text => { live.textContent = text; });
     let active = null;
     let generation = 0;
@@ -69,11 +73,14 @@ async function main() {
       showPlaceholder('—');
       if (!active?.jql) {
         filterName.textContent = '';
+        note.show(null);
         showMessage('Configure a filter in the controller.');
         return;
       }
-      const { jql } = active;
+      // KDG-24: count only issues in the statuses the Controller shows.
+      const jql = visibilityJql(active.jql, active.visibility);
       filterName.textContent = active.name;
+      note.show(hiddenNote(active.visibility, { includeUnlistedDoneClause: true }));
       let state = initialCount();
       render(state, jql);
       void approximateCount(requestJira, jql).then(result => {
@@ -86,13 +93,14 @@ async function main() {
         // The exact count follows, so an approximate failure is not shown.
         console.warn('Approximate issue count failed.', error);
       });
+      const exactJira = trackBadRequest(requestJira);
       try {
-        const result = await countIssues(requestJira, jql, { isCurrent: () => current === generation });
+        const result = await countIssues(exactJira.requestJira, jql, { isCurrent: () => current === generation });
         if (current !== generation) return;
         state = withExact(state, result);
       } catch (error) {
         if (current !== generation) return;
-        state = withExactError(state, error);
+        state = withExactError(state, statusNameError(error, exactJira, active.visibility));
       }
       render(state, jql);
     }
@@ -100,7 +108,7 @@ async function main() {
     const selection = createSelectionTracker({ gadgetId: gadgetId(context), onFallback: () => void refresh() });
     await events.on(FILTER_SELECTED, payload => {
       if (!isForDashboard(payload, id) || !selection.accept(payload)) return;
-      active = { name: payload.name, jql: payload.jql };
+      active = { name: payload.name, jql: payload.jql, visibility: statusVisibility(payload) };
       void refresh();
     });
     await events.on(GADGET_REFRESH, payload => {

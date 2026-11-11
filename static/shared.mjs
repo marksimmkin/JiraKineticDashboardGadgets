@@ -20,6 +20,16 @@ export function statusKey(name) {
   return typeof name === 'string' ? name.trim().toLocaleLowerCase() : '';
 }
 
+// Records the Jira status category key seen for a status name key. Statuses that share a name are
+// counted together, so the name counts as 'done' only while every issue seen with it is Done;
+// otherwise the first non-Done category is kept. Unknown categories are ignored.
+export function recordCategory(categories, key, categoryKey) {
+  if (typeof categoryKey !== 'string' || !categoryKey) return;
+  const category = categoryKey.toLowerCase();
+  const current = categories.get(key);
+  if (current === undefined || (current === 'done' && category !== 'done')) categories.set(key, category);
+}
+
 function validDate(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
@@ -52,8 +62,11 @@ export function configuredStatuses(context) {
     const key = statusKey(status?.name);
     if (!key || unique.has(key) || typeof status.weight !== 'number' ||
       !Number.isFinite(status.weight) || status.weight < 0 || status.weight > 1) continue;
-    unique.set(key, { name: status.name.trim(), weight: status.weight,
-      color: validStatusColor(status.color) ? status.color : STATUS_COLORS[unique.size % STATUS_COLORS.length] });
+    const entry = { name: status.name.trim(), weight: status.weight,
+      color: validStatusColor(status.color) ? status.color : STATUS_COLORS[unique.size % STATUS_COLORS.length] };
+    // `show` is kept only when it was explicitly saved; unset means "use the Jira status category".
+    if (typeof status.show === 'boolean') entry.show = status.show;
+    unique.set(key, entry);
   }
   return [...unique.values()];
 }
@@ -87,6 +100,7 @@ export function validateStatuses(statuses) {
       return 'Each status weight must be between 0 and 1.';
     }
     if (status.color !== undefined && !validStatusColor(status.color)) return 'Choose a valid status colour.';
+    if (status.show !== undefined && typeof status.show !== 'boolean') return 'Choose whether each status is shown.';
     names.add(key);
   }
   return '';
@@ -97,6 +111,7 @@ export function isForDashboard(payload, id) {
 }
 
 export function selectedFilterPayload(context, filter) {
+  const statuses = configuredStatuses(context);
   return {
     dashboardId: dashboardId(context),
     controllerId: gadgetId(context),
@@ -104,7 +119,9 @@ export function selectedFilterPayload(context, filter) {
     jql: filter?.jql ?? null,
     startDate: filter?.startDate ?? null,
     endDate: filter?.endDate ?? null,
-    statuses: configuredStatuses(context),
+    statuses,
+    hiddenStatuses: statuses.filter(status => status.show === false).map(status => status.name),
+    shownStatuses: statuses.filter(status => status.show === true).map(status => status.name),
   };
 }
 
@@ -114,7 +131,8 @@ export function selectionKey(payload) {
   const revision = payload?.revision;
   if (revision === null || revision === undefined) return null;
   return JSON.stringify([revision, payload.jql ?? null, payload.startDate ?? null,
-    payload.endDate ?? null, payload.statuses ?? []]);
+    payload.endDate ?? null, payload.statuses ?? [], payload.hiddenStatuses ?? [],
+    payload.shownStatuses ?? []]);
 }
 
 export const REFRESH_FALLBACK_MS = 3000;

@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test, { mock } from 'node:test';
 import { FILTER_REQUEST, FILTER_SELECTED, GADGET_REFRESH, REFRESH_ANSWERED_MS } from '../static/shared.mjs';
-import { createBus, createStorage, flush, ok, selection, startGadget } from './helpers/gadget-harness.mjs';
+import { createBus, flush, ok, sameFilter, selection, startGadget } from './helpers/gadget-harness.mjs';
 
 const ADD_CONTROLLER = 'Add a Kinetic Dashboard Controller to this dashboard.';
 // Every display gadget (the Controller has its own tests in ui-controller.test.mjs).
@@ -50,7 +50,7 @@ function jiraFor(prefix, count) {
 async function answerAll(g, jira, jqls) {
   for (let round = 0; round < 20; round += 1) {
     const due = g.requests.filter(r => !r.done && (r.body?.jql === undefined ||
-      jqls.some(jql => r.body.jql.startsWith(jql.replace(/ ORDER BY.*$/, '')))));
+      jqls.some(jql => sameFilter(r.body.jql, jql))));
     if (!due.length) return;
     for (const r of due) r.resolve(jira(r.path, r.body));
     await flush();
@@ -162,7 +162,10 @@ for (const name of FETCHING) {
     assert.equal(g.requests.length, afterOwn, 'refresh of another gadget is ignored');
     assert.equal(g.emitted(FILTER_REQUEST).length, 1, 'no new filter.request once a selection is held');
     assert.equal(g.root.textContent, settled, 'the reloaded data is shown the same way');
-    assert.ok(g.requests.every(r => r.body?.jql === undefined || r.body.jql === 'project = A'),
+    // KDG-24: the Counter and List narrow the JQL to shown statuses (Done hidden by default).
+    const want = ['counter', 'issue-list'].includes(name)
+      ? '(project = A) AND (statusCategory != Done)' : 'project = A';
+    assert.ok(g.requests.every(r => r.body?.jql === undefined || r.body.jql === want),
       'every reload uses the held selection');
   }));
 
@@ -180,7 +183,7 @@ for (const name of FETCHING) {
       const g = await startGadget(name);
       await select(g, { name: 'Filter A', jql: 'project = A' });
       await flush();
-      assert.ok(g.requests.some(r => r.body?.jql === 'project = A'), 'filter A load started');
+      assert.ok(g.requests.some(r => sameFilter(r.body?.jql, 'project = A')), 'filter A load started');
       await select(g, B);
       await flush();
       if (order === 'old answered first') {
@@ -222,7 +225,7 @@ test('KDG-7 status-chart: counts bars from the search and drops a stale count', 
   await flush();
   const numbers = g.findAll('status-bar-number').map(b => b.textContent);
   assert.deepEqual(numbers, ['3', '0'], 'To Do and Done');
-  assert.equal(g.find('status').textContent, '3 of 3 issues in selected statuses');
+  assert.equal(g.find('status').textContent, '3 of 3 issues in shown statuses');
   assert.equal(g.find('chart-filter-name').textContent, 'New');
 }));
 
@@ -233,12 +236,12 @@ test('KDG-7 status-chart: a stale error is not shown over the newer result', wit
   const old = g.pending('search/jql')[0];
   await select(g, { jql: 'project = NEW' });
   await flush();
-  g.pending('search/jql').find(r => r.body.jql === 'project = NEW')
+  g.pending('search/jql').find(r => sameFilter(r.body.jql, 'project = NEW'))
     .resolve(ok({ issues: makeIssues('N', 1), isLast: true }));
   await flush();
   old.resolve({ ok: false, status: 500, json: async () => ({}) });
   await flush();
-  assert.equal(g.find('status').textContent, '1 of 1 issues in selected statuses');
+  assert.equal(g.find('status').textContent, '1 of 1 issues in shown statuses');
 }));
 
 test('KDG-7 issue-list: a stale page is not appended after a new selection', withTimers(async () => {
@@ -249,7 +252,7 @@ test('KDG-7 issue-list: a stale page is not appended after a new selection', wit
   assert.equal(old.body.maxResults, 50);
   await select(g, { name: 'New', jql: 'project = NEW' });
   await flush();
-  const fresh = g.pending('search/jql').find(r => r.body.jql === 'project = NEW');
+  const fresh = g.pending('search/jql').find(r => sameFilter(r.body.jql, 'project = NEW'));
   assert.ok(fresh, 'the new selection starts its own page load');
   old.resolve(ok({ issues: makeIssues('OLD', 4), nextPageToken: 'old-2', isLast: false }));
   await flush();
@@ -361,19 +364,6 @@ test('KDG-7 dates: shows the selected dates and refresh asks the Controller agai
   await flush();
   assert.equal(g.find('status').textContent, 'Configure a filter in the controller.');
   assert.deepEqual(g.findAll('date-card-value').map(n => n.textContent), ['—', '—']);
-}));
-
-test('KDG-7 status-chart: hidden statuses survive blocked browser storage', withTimers(async () => {
-  const g = await startGadget('status-chart', { storage: createStorage({ blocked: true }), jira: jiraFor('A', 2) });
-  await select(g);
-  await flush();
-  assert.equal(g.find('status').textContent, '2 of 2 issues in selected statuses');
-  const [todo] = g.root.querySelectorAll('input[type="checkbox"]');
-  todo.checked = false;
-  todo.dispatchEvent({ type: 'change' });
-  await flush();
-  assert.equal(g.find('status').textContent, '0 of 2 issues in selected statuses');
-  assert.equal(g.find('status-filter-summary').textContent, 'Statuses: 1 of 2');
 }));
 
 // ---------------------------------------------------------------------------------------------
@@ -491,7 +481,7 @@ for (const name of WALKING) {
     await flush();
     old.resolve(ok({ issues: makeIssues('OLD', 3), nextPageToken: 'old-2', isLast: false }));
     await flush();
-    const oldRequests = g.requests.filter(r => r.path.includes('search/jql') && r.body?.jql === 'project = OLD');
+    const oldRequests = g.requests.filter(r => r.path.includes('search/jql') && sameFilter(r.body?.jql, 'project = OLD'));
     assert.equal(oldRequests.length, 1, 'page 2 of the old walk is never requested');
     assert.equal(g.pending('bulkfetch').length, 0);
     await answerAll(g, jiraFor('NEW', 2), ['project = NEW']);

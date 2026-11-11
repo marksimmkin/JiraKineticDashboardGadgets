@@ -32,6 +32,7 @@ test('saved filters are normalized and invalid entries are ignored', () => {
     dashboardId: '12', controllerId: '7', name: 'Release', jql: 'project = GAME',
     startDate: '2026-01-01', endDate: '2026-03-31',
     statuses: [{ name: 'In Progress', weight: 0.5, color: '#0c66e4' }],
+    hiddenStatuses: [], shownStatuses: [],
   });
   assert.deepEqual(configuredStatuses({ extension: { gadgetConfiguration: {} } }), []);
   assert.equal(statusKey(' To Do '), 'to do');
@@ -84,6 +85,7 @@ test('status chart combines equal status names across IDs and search pages', asy
     counts: { 'to do': 2, 'in progress': 1, 'done': 0 }, total: 4,
     unmapped: [{ name: 'Other', count: 1 }],
     statusIds: { 'to do': ['100', '101'], 'in progress': ['200'], other: ['999'] },
+    categories: {},
   });
   assert.deepEqual(bodies[0].fields, ['status']);
   assert.equal(bodies[1].nextPageToken, 'next');

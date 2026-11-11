@@ -29,7 +29,7 @@ export function splitOrderBy(jql) {
     : { filter: jql.slice(0, orderAt).trim(), order: jql.slice(orderAt).trim() };
 }
 
-function quoteJql(value) {
+export function quoteJql(value) {
   return `"${String(value).replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
 }
 

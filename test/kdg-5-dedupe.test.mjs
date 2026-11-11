@@ -29,8 +29,8 @@ test('selectionKey is null when the revision is missing or null', () => {
 
 test('selectionKey has the documented shape and defaults', () => {
   assert.equal(selectionKey(selection()), JSON.stringify(['n1:1', 'project = A', '2026-10-01',
-    '2026-10-31', [{ name: 'Done', weight: 0, color: '#22a06b' }]]));
-  assert.equal(selectionKey({ revision: 'n:0' }), JSON.stringify(['n:0', null, null, null, []]));
+    '2026-10-31', [{ name: 'Done', weight: 0, color: '#22a06b' }], [], []]));
+  assert.equal(selectionKey({ revision: 'n:0' }), JSON.stringify(['n:0', null, null, null, [], [], []]));
 });
 
 test('selectionKey changes with revision, JQL, dates or statuses, but not name or ids', () => {

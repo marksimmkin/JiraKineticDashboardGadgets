@@ -1,6 +1,6 @@
 import { splitOrderBy } from './drilldown.mjs';
 import { searchPage, searchPages } from './jira-search.mjs';
-import { statusKey } from './shared.mjs';
+import { recordCategory, statusKey } from './shared.mjs';
 
 export const DEFAULT_COLUMNS = ['key', 'summary', 'status', 'assignee'];
 
@@ -44,6 +44,7 @@ export function summarizeAssignees(issues, statuses) {
   const weights = new Map(statuses.map(status => [statusKey(status.name), status.weight]));
   const statusNames = new Map();
   const statusIds = new Map();
+  const categories = new Map();
   const rows = new Map();
   const missing = new Set();
   for (const issue of issues) {
@@ -53,6 +54,7 @@ export function summarizeAssignees(issues, statuses) {
     const statusName = issue?.fields?.status?.name || 'Unknown status';
     const key = statusKey(statusName);
     if (!statusNames.has(key)) statusNames.set(key, statusName);
+    recordCategory(categories, key, issue?.fields?.status?.statusCategory?.key);
     const statusId = issue?.fields?.status?.id;
     if (statusId !== null && statusId !== undefined) {
       const ids = statusIds.get(key) ?? new Set();
@@ -78,7 +80,8 @@ export function summarizeAssignees(issues, statuses) {
     a[1].localeCompare(b[1]));
   return {
     rows: [...rows.values()],
-    statuses: columns.map(([key, name]) => ({ key, name, ids: [...(statusIds.get(key) ?? [])] })),
+    statuses: columns.map(([key, name]) => ({ key, name, ids: [...(statusIds.get(key) ?? [])],
+      category: categories.get(key) ?? null })),
     unmapped: [...missing].sort((a, b) => a.localeCompare(b)),
     total: issues.length,
   };

@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import test, { mock } from 'node:test';
 import { FILTER_SELECTED } from '../static/shared.mjs';
-import { fail, flush, ok, selection, startGadget } from './helpers/gadget-harness.mjs';
+import { fail, flush, ok, sameFilter, selection, startGadget } from './helpers/gadget-harness.mjs';
 
 const FETCHING = ['status-chart', 'status-pie', 'progress-bar', 'burndown', 'counter',
   'issue-list', 'user-list', 'user-leaderboard'];
@@ -43,7 +43,7 @@ function jiraFor(prefix, count) {
 
 async function answerAll(g, respond, jql) {
   for (let round = 0; round < 20; round += 1) {
-    const due = g.requests.filter(r => !r.done && (r.body?.jql === undefined || r.body.jql.startsWith(jql)));
+    const due = g.requests.filter(r => !r.done && (r.body?.jql === undefined || sameFilter(r.body.jql, jql)));
     if (!due.length) return;
     for (const r of due) r.resolve(respond(r.path, r.body));
     await flush();

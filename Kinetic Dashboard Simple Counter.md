@@ -1,1 +1,1 @@
-A simple counter showing the total number of items in the JQL that comes from the [[Kinetic Dashboard Controller]]. It shows an approximate count, marked "about", straight away, and replaces it with the exact count when counting finishes.
+A simple counter showing the total number of items in the JQL that comes from the [[Kinetic Dashboard Controller]]. It shows an approximate count, marked "about", straight away, and replaces it with the exact count when counting finishes. Count only issues in statuses the Controller shows, and show a "Hiding:" note below the filter name.

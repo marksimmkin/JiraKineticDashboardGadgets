@@ -16,7 +16,9 @@ const STATUSES = CONFIG.statuses;
 
 function expected(controller, overrides) {
   return { dashboardId: 'd1', controllerId: controller.gadgetId, name: 'Alpha', jql: 'project = A',
-    startDate: '2026-01-01', endDate: '2026-03-31', statuses: STATUSES, ...overrides };
+    startDate: '2026-01-01', endDate: '2026-03-31', statuses: STATUSES,
+    // KDG-24: neither saved status has an explicit Show flag.
+    hiddenStatuses: [], shownStatuses: [], ...overrides };
 }
 const BETA = { name: 'Beta', jql: 'project = B ORDER BY rank', startDate: null, endDate: null };
 
