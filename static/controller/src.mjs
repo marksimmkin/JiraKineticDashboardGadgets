@@ -54,7 +54,7 @@ async function edit(context) {
   const filtersHeading = element('h2', 'config-heading', 'Filters');
   const rows = element('div', 'filter-list');
   const statusesHeading = element('h2', 'config-heading', 'Statuses');
-  const statusHelp = element('p', 'muted', 'Choose Jira statuses or enter a missing status name exactly as a gadget shows it. Statuses with the same name are counted together. Untick Show to hide a status from the counter, list, charts, and user gadgets for everyone. Done statuses start unticked, and Done statuses not listed here are also hidden. Weights are used by the progress, burndown, and leaderboard gadgets. Colours are used by the pie chart. The progress and burndown gadgets always include every status.');
+  const statusHelp = element('p', 'muted', 'Choose Jira statuses or enter a missing status name exactly as a gadget shows it. Statuses with the same name are counted together. Untick Show to hide a status from the counter, list, charts, and user gadgets for everyone. Done statuses start unticked, and Done statuses not listed here are also hidden. The charts and user gadgets show only statuses listed here. Weights are used by the progress, burndown, and leaderboard gadgets. Colours are used by the pie chart. The progress and burndown gadgets always include every status.');
   const statusRows = element('div', 'status-list');
   const statusWarning = element('p', 'muted', statusLoadError);
   const error = element('p', 'error');

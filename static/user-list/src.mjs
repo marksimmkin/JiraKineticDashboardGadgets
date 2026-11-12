@@ -105,7 +105,7 @@ async function main() {
     function render() {
       tableArea.replaceChildren();
       if (!loadedIssues?.length || !active) return;
-      // KDG-24: leave out issues in statuses the Controller hides.
+      // KDG-24/KDG-25: leave out issues in statuses the Controller hides or does not list.
       const selectedIssues = shownIssues(loadedIssues, active.visibility);
       if (!selectedIssues.length) {
         message.replaceChildren(
@@ -117,10 +117,6 @@ async function main() {
         return;
       }
       const result = summarizeAssignees(selectedIssues, active.statuses);
-      if (metricSelect.selected() === 'score' && result.unmapped.length) {
-        message.textContent = `In the Controller, use Add missing status to set weights for: ${result.unmapped.join(', ')}.`;
-        return;
-      }
       const narrowed = selectedIssues.length < loadedIssues.length;
       showTable(result, narrowed ? narrowJql(active.jql, [statusesClause(result.statuses)]) : active.jql, narrowed);
     }
@@ -132,6 +128,10 @@ async function main() {
       tableArea.replaceChildren();
       if (!active?.jql) {
         message.textContent = 'Choose a filter in the Controller.';
+        return;
+      }
+      if (!active.statuses.length) {
+        message.textContent = 'Add statuses in the Controller to see the user list.';
         return;
       }
       note.show(hiddenNote(active.visibility));
@@ -162,7 +162,7 @@ async function main() {
         jql: payload.jql,
         statuses: Array.isArray(payload.statuses)
           ? payload.statuses.filter(status => statusKey(status?.name)) : [],
-        visibility: statusVisibility(payload),
+        visibility: statusVisibility(payload, { listedOnly: true }),
       };
       filterName.textContent = active.name ?? '';
       void refresh();

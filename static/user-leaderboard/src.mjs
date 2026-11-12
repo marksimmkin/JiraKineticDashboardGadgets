@@ -83,7 +83,7 @@ async function main() {
     function render() {
       rows.replaceChildren();
       if (!loadedIssues?.length || !active) return;
-      // KDG-24: leave out issues in statuses the Controller hides.
+      // KDG-24/KDG-25: leave out issues in statuses the Controller hides or does not list.
       const selectedIssues = shownIssues(loadedIssues, active.visibility);
       if (!selectedIssues.length) {
         message.replaceChildren(
@@ -95,10 +95,6 @@ async function main() {
         return;
       }
       const result = summarizeAssignees(selectedIssues, active.statuses);
-      if (metricSelect.selected() === 'score' && result.unmapped.length) {
-        message.textContent = `In the Controller, use Add missing status to set weights for: ${result.unmapped.join(', ')}.`;
-        return;
-      }
       const narrowed = selectedIssues.length < loadedIssues.length;
       showLeaderboard(result, narrowed ? narrowJql(active.jql, [statusesClause(result.statuses)]) : active.jql, narrowed);
     }
@@ -110,6 +106,10 @@ async function main() {
       rows.replaceChildren();
       if (!active?.jql) {
         message.textContent = 'Choose a filter in the Controller.';
+        return;
+      }
+      if (!active.statuses.length) {
+        message.textContent = 'Add statuses in the Controller to see the leaderboard.';
         return;
       }
       note.show(hiddenNote(active.visibility));
@@ -135,14 +135,16 @@ async function main() {
     const selection = createSelectionTracker({ gadgetId: gadgetId(context), onFallback: () => void refresh() });
     await events.on(FILTER_SELECTED, payload => {
       if (!isForDashboard(payload, id) || !selection.accept(payload)) return;
+      const statuses = Array.isArray(payload.statuses)
+        ? payload.statuses.filter(status => statusKey(status?.name) &&
+          Number.isFinite(status?.weight) && status.weight >= 0 && status.weight <= 1)
+        : [];
+      // KDG-25: only weighted, listed statuses are shown, so every shown issue has a weight.
       active = {
         name: payload.name,
         jql: payload.jql,
-        statuses: Array.isArray(payload.statuses)
-          ? payload.statuses.filter(status => statusKey(status?.name) &&
-            Number.isFinite(status?.weight) && status.weight >= 0 && status.weight <= 1)
-          : [],
-        visibility: statusVisibility(payload),
+        statuses,
+        visibility: statusVisibility({ ...payload, statuses }, { listedOnly: true }),
       };
       filterName.textContent = active.name ?? '';
       void refresh();

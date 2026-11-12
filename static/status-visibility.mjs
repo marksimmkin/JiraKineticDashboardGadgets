@@ -3,7 +3,8 @@ import { statusKey } from './shared.mjs';
 
 // KDG-24: which statuses the in-scope gadgets show. A status is shown unless
 //   (a) the Controller saved `show: false` for it, or
-//   (b) it has no explicit flag and its Jira status category is Done.
+//   (b) it has no explicit flag and its Jira status category is Done, or
+//   (c) KDG-25: the visibility is listed-only and the Controller does not list it.
 // DOM-free.
 
 function uniqueNames(names) {
@@ -21,16 +22,24 @@ function uniqueNames(names) {
 // Reads the explicit flags from a FILTER_SELECTED payload. Payloads from an older Controller
 // have no `hiddenStatuses` / `shownStatuses` and so have nothing explicit (rule (b) only).
 // A name in both lists is treated as hidden.
-export function statusVisibility(payload) {
+// KDG-25: with `listedOnly`, the result also has `listed`, the keys of `payload.statuses`, and
+// statuses outside it are hidden (User List and Leaderboard). Without it nothing changes.
+export function statusVisibility(payload, { listedOnly = false } = {}) {
   const hiddenNames = uniqueNames(payload?.hiddenStatuses);
   const hidden = new Set(hiddenNames.map(statusKey));
   const shownNames = uniqueNames(payload?.shownStatuses).filter(name => !hidden.has(statusKey(name)));
-  return { hidden, shown: new Set(shownNames.map(statusKey)), hiddenNames, shownNames };
+  const visibility = { hidden, shown: new Set(shownNames.map(statusKey)), hiddenNames, shownNames };
+  if (listedOnly) {
+    const statuses = Array.isArray(payload?.statuses) ? payload.statuses : [];
+    visibility.listed = new Set(statuses.map(status => statusKey(status?.name)).filter(Boolean));
+  }
+  return visibility;
 }
 
 export function isStatusShown(name, categoryKey, visibility) {
   const key = statusKey(name);
   if (visibility?.hidden?.has(key)) return false;
+  if (visibility?.listed && !visibility.listed.has(key)) return false;
   if (visibility?.shown?.has(key)) return true;
   return String(categoryKey ?? '').toLowerCase() !== 'done';
 }
@@ -59,8 +68,8 @@ const NOTE_LIMIT = 3;
 // The model for the read-only "Hiding:" note, or null when nothing is hidden.
 // - visibility: from statusVisibility; its hiddenNames come first, in Controller order.
 // - discovered: statuses found in the loaded issues as { name, category } (User List and
-//   Leaderboard). Those hidden by their Done category, and not already explicitly hidden, follow,
-//   sorted A-Z.
+//   Leaderboard). Those hidden by their Done category, or by not being listed in a listed-only
+//   visibility, and not already explicitly hidden, follow, sorted A-Z.
 // - includeUnlistedDoneClause: Counter and List; ends the list with "unlisted Done statuses".
 // Returns { text, fullText, fullList, truncated }: `text` is the visible line, `fullText` the
 // screen-reader sentence and `fullList` the untruncated list (for the title).
