@@ -171,6 +171,7 @@ class FakeElement extends FakeNode {
     return !event.defaultPrevented;
   }
   click() { if (!this.disabled) this.dispatchEvent(new FakeEvent('click')); }
+  focus() { this.ownerDocument.activeElement = this; }
 
   set innerHTML(html) {
     this.clear();

@@ -8,7 +8,7 @@ import { createBus, flush, ok, sameFilter, selection, startGadget } from './help
 const ADD_CONTROLLER = 'Add a Kinetic Dashboard Controller to this dashboard.';
 // Every display gadget (the Controller has its own tests in ui-controller.test.mjs).
 const GADGETS = ['status-chart', 'status-pie', 'progress-bar', 'burndown', 'counter', 'dates',
-  'issue-list', 'user-list', 'user-leaderboard'];
+  'issue-list', 'user-list', 'user-leaderboard', 'capacity'];
 // Gadgets that load Jira data for a selection. Simple Dates only shows the payload.
 const FETCHING = GADGETS.filter(name => name !== 'dates');
 

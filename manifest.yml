@@ -69,6 +69,14 @@ modules:
       thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
       resource: user-leaderboard
       refreshable: false
+    - key: kinetic-dashboard-capacity
+      title: Kinetic Dashboard Capacity
+      description: Compare each assignee's remaining estimate with working days left.
+      thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+      resource: capacity
+      edit:
+        resource: capacity
+      refreshable: false
 
 resources:
   - key: controller
@@ -91,6 +99,8 @@ resources:
     path: static/user-list/dist
   - key: user-leaderboard
     path: static/user-leaderboard/dist
+  - key: capacity
+    path: static/capacity/dist
 
 permissions:
   scopes:
