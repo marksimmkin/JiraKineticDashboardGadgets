@@ -74,7 +74,8 @@ test('KDG-24 Controller: Show box defaults, Done marker, labels and help text', 
   assert.equal(c.panel().findAll('muted')[1].textContent, 'Choose Jira statuses or enter a missing status ' +
     'name exactly as a gadget shows it. Statuses with the same name are counted together. Untick Show to ' +
     'hide a status from the counter, list, charts, and user gadgets for everyone. Done statuses start ' +
-    'unticked, and Done statuses not listed here are also hidden. Weights are used by the progress, ' +
+    'unticked, and Done statuses not listed here are also hidden. The charts and user gadgets show only ' +
+    'statuses listed here. Weights are used by the progress, ' +
     'burndown, and leaderboard gadgets. Colours are used by the pie chart. The progress and burndown ' +
     'gadgets always include every status.');
   // Legacy is not in Jira's list, so it is a manual row: ticked, so no `show` is written.
