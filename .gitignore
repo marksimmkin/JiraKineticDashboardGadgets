@@ -14,4 +14,5 @@ static/status-pie/dist/
 static/issue-list/dist/
 static/user-list/dist/
 static/user-leaderboard/dist/
+static/capacity/dist/
 .claude/settings.local.json

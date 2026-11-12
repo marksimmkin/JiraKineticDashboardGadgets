@@ -14,3 +14,4 @@ Where a gadget shows a count of issues, clicking that number opens Jira's standa
 - [[Kinetic Dashboard List]]
 - [[Kinetic Dashboard User List]]
 - [[Kinetic Dashboard User Leaderboard]]
+- [[Kinetic Dashboard Capacity]]
