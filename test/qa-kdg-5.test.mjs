@@ -7,7 +7,7 @@ import { createBus, fail, flush, ok, sameFilter, selection, startGadget } from '
 
 const ADD_CONTROLLER = 'Add a Kinetic Dashboard Controller to this dashboard.';
 const GADGETS = ['status-chart', 'status-pie', 'progress-bar', 'burndown', 'counter', 'dates',
-  'issue-list', 'user-list', 'user-leaderboard', 'capacity', 'time-logging'];
+  'issue-list', 'user-list', 'user-leaderboard', 'capacity'];
 const FETCHING = GADGETS.filter(name => name !== 'dates');
 const WALKING = FETCHING.filter(name => name !== 'issue-list');
 const CONFIG = {
@@ -30,7 +30,6 @@ const makeIssues = (prefix, count) => Array.from({ length: count }, (_, i) => ({
     summary: 's', status: { id: '1', name: 'To Do', statusCategory: { key: 'new' } },
     assignee: { accountId: 'u', displayName: 'U' }, created: '2026-01-02T00:00:00Z',
     updated: '2026-01-02T00:00:00Z', timetracking: { remainingEstimateSeconds: 3600 },
-    worklog: { startAt: 0, maxResults: 20, total: 0, worklogs: [] },
   },
 }));
 // Answers for whichever project the JQL names.

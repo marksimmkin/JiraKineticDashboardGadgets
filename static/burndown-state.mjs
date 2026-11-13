@@ -12,7 +12,7 @@ export const LOADED_ANNOUNCEMENT = 'Burndown loaded.';
 export const LOAD_ERROR_TEXT = 'Could not load the burndown.';
 
 // The gadget-specific words. `history` names what phase 2 loads per issue. The Burndown uses
-// these defaults; the Time Logging gadget passes its own (KDG-23).
+// these defaults; another gadget can pass its own.
 export const BURNDOWN_COPY = Object.freeze({
   history: 'status history', loading: LOADING_ANNOUNCEMENT, loaded: LOADED_ANNOUNCEMENT,
   error: LOAD_ERROR_TEXT,

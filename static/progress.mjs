@@ -7,8 +7,7 @@ export function dateOrdinal(value) {
   return Math.floor(date.valueOf() / 86400000);
 }
 
-// One formatter per time zone: building an Intl.DateTimeFormat is slow, and the Time Logging
-// gadget converts every worklog's start time with this function.
+// One formatter per time zone: building an Intl.DateTimeFormat is slow.
 const dateFormatters = new Map();
 
 function dateFormatter(timezone) {
