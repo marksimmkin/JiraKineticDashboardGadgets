@@ -7,7 +7,7 @@ import { createBus, fail, flush, ok, sameFilter, selection, startGadget } from '
 
 const ADD_CONTROLLER = 'Add a Kinetic Dashboard Controller to this dashboard.';
 const GADGETS = ['status-chart', 'status-pie', 'progress-bar', 'burndown', 'counter', 'dates',
-  'issue-list', 'user-list', 'user-leaderboard', 'capacity'];
+  'issue-list', 'user-list', 'user-leaderboard', 'capacity', 'time-logging'];
 const FETCHING = GADGETS.filter(name => name !== 'dates');
 const WALKING = FETCHING.filter(name => name !== 'issue-list');
 const CONFIG = {

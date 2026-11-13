@@ -15,4 +15,5 @@ static/issue-list/dist/
 static/user-list/dist/
 static/user-leaderboard/dist/
 static/capacity/dist/
+static/time-logging/dist/
 .claude/settings.local.json

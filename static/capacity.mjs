@@ -24,11 +24,12 @@ export function parseHoursInput(text) {
 }
 
 // Day ordinal 0 is 1970-01-01, a Thursday. Returns 0 (Sunday) to 6 (Saturday).
-function weekday(day) {
+export function weekday(day) {
   return ((day + 4) % 7 + 7) % 7;
 }
 
-function weekdaysBetween(first, last) {
+// Monday to Friday from day ordinal `first` to `last` (see dateOrdinal), both inclusive.
+export function weekdaysBetween(first, last) {
   if (last < first) return 0;
   const span = last - first + 1;
   let days = Math.floor(span / 7) * 5;

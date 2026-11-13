@@ -56,6 +56,10 @@ export function assigneeClause(accountId) {
   return accountId === '__unassigned__' ? 'assignee is EMPTY' : `assignee = ${quoteJql(accountId)}`;
 }
 
+export function worklogAuthorClause(accountId) {
+  return `worklogAuthor = ${quoteJql(accountId)}`;
+}
+
 export function issueSearchUrl(jql) {
   return `/issues/?jql=${encodeURIComponent(jql)}`;
 }
