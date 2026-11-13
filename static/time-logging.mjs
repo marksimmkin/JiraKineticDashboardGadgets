@@ -81,9 +81,11 @@ export function worklogPeriodDay(worklog, period, timeZone) {
 }
 
 // The embedded search field holds at most 20 worklogs; `total` says how many exist.
+// KDG-26: Jira's search can leave the field out entirely (for example when Log work is hidden
+// in the project's field configuration), so a missing field means "fetch", not "none".
 export function hasAllWorklogs(issue) {
   const field = issue?.fields?.worklog;
-  if (!field) return true; // no worklog field (time tracking off or hidden): nothing to fetch
+  if (!field) return false;
   if (!Array.isArray(field.worklogs)) return false;
   return !(typeof field.total === 'number' && field.total > field.worklogs.length);
 }
