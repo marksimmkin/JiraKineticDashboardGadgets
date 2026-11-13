@@ -162,7 +162,7 @@ test('QA KDG-23: exactly 20 embedded worklogs needs no request; 21 does', () => 
   const twenty = Array.from({ length: 20 }, () => log(ann, '2026-11-03T09:00:00.000+0000', H));
   assert.equal(hasAllWorklogs(issue(1, ann, twenty, 20)), true);
   assert.equal(hasAllWorklogs(issue(1, ann, twenty, 21)), false);
-  assert.equal(hasAllWorklogs({ id: '1', fields: { assignee: ann } }), true, 'no worklog field: nothing to fetch');
+  assert.equal(hasAllWorklogs({ id: '1', fields: { assignee: ann } }), false, 'KDG-26: no worklog field: fetch');
 });
 
 test('QA KDG-23: worklog paging follows startAt, tolerates a missing total, and stops on an empty page', async () => {

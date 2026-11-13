@@ -221,7 +221,7 @@ test('an issue needs a worklog request only when its embedded list is truncated'
   assert.equal(hasAllWorklogs(issue(1, ann, [], 0)), true);
   assert.equal(hasAllWorklogs(issue(1, ann, new Array(20).fill(log(ann, 'x', 1)), 21)), false);
   assert.equal(hasAllWorklogs({ id: '1', fields: { worklog: { total: 3 } } }), false);
-  assert.equal(hasAllWorklogs({ id: '1', fields: {} }), true);
+  assert.equal(hasAllWorklogs({ id: '1', fields: {} }), false, 'KDG-26: a missing field is fetched');
 });
 
 test('worklog window allows a day of slack each side of the range', () => {
@@ -442,4 +442,20 @@ test('a 404 on one issue\'s worklogs (deleted mid-load) falls back to its embedd
   const summary = summarizeTimeLogged(issues, worklogsByIssue, RANGE, 'UTC');
   assert.deepEqual(summary.people.map(p => [p.displayName, p.loggedSeconds]), [['Bob', 2 * HOUR], ['Ann', HOUR]]);
   assert.equal(await fetchIssueWorklogs(async () => fail(404), '1', null), null);
+});
+
+test('KDG-26: an issue whose search result has no worklog field has its worklogs fetched and counted', async () => {
+  const bare = { id: '7', key: 'K-7', fields: { assignee: ann } };
+  const paths = [];
+  const requestJira = async path => {
+    paths.push(path);
+    return { ok: true, status: 200, json: async () => ({ startAt: 0, maxResults: 5000, total: 1,
+      worklogs: [log(ann, '2026-11-10T09:00:00.000+0000', 7200)] }) };
+  };
+  const worklogsByIssue = await fetchWorklogs(requestJira, [bare], RANGE);
+  assert.equal(paths.length, 1);
+  assert.match(paths[0], /^\/rest\/api\/3\/issue\/7\/worklog\?/);
+  const summary = summarizeTimeLogged([bare], worklogsByIssue, RANGE, 'UTC');
+  assert.equal(summary.people[0].loggedSeconds, 7200);
+  assert.equal(summary.people[0].issueCount, 1);
 });

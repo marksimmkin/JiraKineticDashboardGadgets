@@ -29,6 +29,7 @@ function makeIssues(prefix, count) {
       assignee: { accountId: `${prefix}-user`, displayName: `${prefix} User` },
       created: '2026-01-02T00:00:00Z', updated: '2026-01-02T00:00:00Z',
       timetracking: { remainingEstimateSeconds: 3600 },
+      worklog: { startAt: 0, maxResults: 20, total: 0, worklogs: [] },
     },
   }));
 }
