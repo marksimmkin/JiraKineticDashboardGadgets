@@ -105,7 +105,7 @@ async function fetchStatusChangeBatch(requestJira, ids, aborted, isCurrent) {
 // Runs every batch with at most `limit` in flight. Resolves with results in batch order, or
 // rejects with the first error and starts no further requests. Once `isCurrent()` is false it
 // starts no new batch, discards any batch that finishes, and rejects with SupersededError.
-function runBatches(batches, limit, run, isCurrent = () => true) {
+export function runBatches(batches, limit, run, isCurrent = () => true) {
   return new Promise((resolve, reject) => {
     const results = new Array(batches.length);
     let next = 0;

@@ -11,6 +11,13 @@ export const LOADING_ANNOUNCEMENT = 'Loading the burndown.';
 export const LOADED_ANNOUNCEMENT = 'Burndown loaded.';
 export const LOAD_ERROR_TEXT = 'Could not load the burndown.';
 
+// The gadget-specific words. `history` names what phase 2 loads per issue. The Burndown uses
+// these defaults; the Time Logging gadget passes its own (KDG-23).
+export const BURNDOWN_COPY = Object.freeze({
+  history: 'status history', loading: LOADING_ANNOUNCEMENT, loaded: LOADED_ANNOUNCEMENT,
+  error: LOAD_ERROR_TEXT,
+});
+
 const defaultFormat = new Intl.NumberFormat('en-GB');
 
 // phase: 'issues' (search) or 'history' (status changes). loaded: issues found so far, or null
@@ -41,13 +48,13 @@ export function withHistory(state, { done, total }) {
   return { ...state, total, done };
 }
 
-function progressText(state, format) {
+function progressText(state, format, copy) {
   const { phase, loaded, approximate, total, done } = state;
   if (phase === 'history') {
     const noun = total === 1 ? 'issue' : 'issues';
     return done === null
-      ? `Loading status history for ${format.format(total)} ${noun}…`
-      : `Loading status history… ${format.format(done)} of ${format.format(total)} ${noun}`;
+      ? `Loading ${copy.history} for ${format.format(total)} ${noun}…`
+      : `Loading ${copy.history}… ${format.format(done)} of ${format.format(total)} ${noun}`;
   }
   if (loaded === null) return 'Loading issues…';
   return approximate !== null && loaded < approximate
@@ -57,8 +64,8 @@ function progressText(state, format) {
 
 // Returns the visible text and its screen-reader sentence (a trailing "…" becomes ".", and a
 // full stop is added when the line has none).
-export function loadingView(state, format = defaultFormat) {
-  let text = progressText(state, format);
+export function loadingView(state, format = defaultFormat, copy = BURNDOWN_COPY) {
+  let text = progressText(state, format, copy);
   if (state.approximate !== null && state.approximate >= LARGE_FILTER_THRESHOLD) {
     text = `${text}${text.endsWith('…') ? '' : '.'} ${LARGE_FILTER_HINT}`;
   }
@@ -72,8 +79,10 @@ export function loadingView(state, format = defaultFormat) {
 // supersedes it, after which every method of the old run does nothing.
 // `cancelAnnounce`, if given, is called whenever pending live-region writes must be dropped
 // (start, cancel, and a new guard message), so the sink can cancel its own delayed writes.
+// `copy` (see BURNDOWN_COPY) sets the phase 2 noun, the announcements and the fallback error.
 export function createBurndownLoader({ setText, announce, cancelAnnounce,
-  format = defaultFormat, timers = globalThis }) {
+  format = defaultFormat, timers = globalThis, copy: copyOverrides }) {
+  const copy = { ...BURNDOWN_COPY, ...copyOverrides };
   const announcer = createAnnouncer(announce, timers, { minInterval: PROGRESS_ANNOUNCE_INTERVAL });
   let current = null;
   // The last guard message announced since the last start(). The Controller re-broadcasts
@@ -107,9 +116,9 @@ export function createBurndownLoader({ setText, announce, cancelAnnounce,
 
     function update(next) {
       if (!active || next === state) return;
-      const before = loadingView(state, format);
+      const before = loadingView(state, format, copy);
       state = next;
-      const after = loadingView(state, format);
+      const after = loadingView(state, format, copy);
       if (visible && after.text !== before.text) setText(after.text);
       if (spoken && after.announcement !== before.announcement) announcer.announceLatest(after.announcement);
     }
@@ -135,10 +144,10 @@ export function createBurndownLoader({ setText, announce, cancelAnnounce,
       approximate: count => update(withApproximate(state, count)),
       searchDone: () => update(withSearchDone(state)),
       history: progress => update(withHistory(state, progress)),
-      ready: () => end('', spoken ? LOADED_ANNOUNCEMENT : null),
+      ready: () => end('', spoken ? copy.loaded : null),
       message: text => end(text, text),
       fail: error => {
-        const text = error?.message || LOAD_ERROR_TEXT;
+        const text = error?.message || copy.error;
         end(text, text);
       },
     };
@@ -147,12 +156,12 @@ export function createBurndownLoader({ setText, announce, cancelAnnounce,
     showTimer = timers.setTimeout(() => {
       showTimer = null;
       visible = true;
-      setText(loadingView(state, format).text);
+      setText(loadingView(state, format, copy).text);
     }, LOADING_TEXT_DELAY);
     speakTimer = timers.setTimeout(() => {
       speakTimer = null;
       spoken = true;
-      announcer.announce(LOADING_ANNOUNCEMENT);
+      announcer.announce(copy.loading);
     }, LOADING_ANNOUNCE_DELAY);
     current = run;
     return run;

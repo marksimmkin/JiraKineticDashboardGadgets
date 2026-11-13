@@ -77,6 +77,12 @@ modules:
       edit:
         resource: capacity
       refreshable: false
+    - key: kinetic-dashboard-time-logging
+      title: Kinetic Dashboard Time Logging
+      description: Show each person's average time logged per working day.
+      thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+      resource: time-logging
+      refreshable: false
 
 resources:
   - key: controller
@@ -101,6 +107,8 @@ resources:
     path: static/user-leaderboard/dist
   - key: capacity
     path: static/capacity/dist
+  - key: time-logging
+    path: static/time-logging/dist
 
 permissions:
   scopes:

@@ -7,18 +7,29 @@ export function dateOrdinal(value) {
   return Math.floor(date.valueOf() / 86400000);
 }
 
-export function todayInTimezone(timezone, now = new Date()) {
-  let formatter;
+// One formatter per time zone: building an Intl.DateTimeFormat is slow, and the Time Logging
+// gadget converts every worklog's start time with this function.
+const dateFormatters = new Map();
+
+function dateFormatter(timezone) {
+  const key = timezone || 'UTC';
+  let formatter = dateFormatters.get(key);
+  if (formatter) return formatter;
   try {
     formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit',
+      timeZone: key, year: 'numeric', month: '2-digit', day: '2-digit',
     });
   } catch {
     formatter = new Intl.DateTimeFormat('en-US', {
       timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit',
     });
   }
-  const parts = Object.fromEntries(formatter.formatToParts(now).map(part => [part.type, part.value]));
+  dateFormatters.set(key, formatter);
+  return formatter;
+}
+
+export function todayInTimezone(timezone, now = new Date()) {
+  const parts = Object.fromEntries(dateFormatter(timezone).formatToParts(now).map(part => [part.type, part.value]));
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 

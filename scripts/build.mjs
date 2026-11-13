@@ -3,7 +3,8 @@ import { cp, mkdir, readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
 for (const name of ['controller', 'counter', 'dates', 'status-chart', 'progress-bar',
-  'burndown', 'status-pie', 'issue-list', 'user-list', 'user-leaderboard', 'capacity']) {
+  'burndown', 'status-pie', 'issue-list', 'user-list', 'user-leaderboard', 'capacity',
+  'time-logging']) {
   const base = join('static', name);
   const output = join(base, 'dist');
   const entry = resolve(base, 'src.mjs');

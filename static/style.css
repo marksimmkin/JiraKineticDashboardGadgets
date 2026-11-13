@@ -108,7 +108,7 @@ textarea.text-input { resize: vertical; min-height: 62px; }
 .burndown-summary { margin: 8px 0 0; color: var(--ds-text-subtle, #626f86); font-size: 12px; line-height: 1.5; }
 .burndown-summary:empty, .burndown .status:empty { display: none; }
 .burndown .status { font-variant-numeric: tabular-nums; }
-.status-pie, .issue-list, .user-list, .user-leaderboard, .capacity { padding-block: 22px; }
+.status-pie, .issue-list, .user-list, .user-leaderboard, .capacity, .time-logging { padding-block: 22px; }
 .pie-content { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 16px; width: 100%; }
 .pie-donut { position: relative; width: 100%; aspect-ratio: 1; border-radius: 50%; }
 .pie-center { position: absolute; inset: 24%; display: grid; place-items: center; border-radius: 50%; background: var(--ds-surface, #fff); color: var(--ds-text, #172b4d); font-size: 22px; font-weight: 750; }
@@ -160,6 +160,9 @@ textarea.text-input { resize: vertical; min-height: 62px; }
 .capacity-edit .text-input { max-width: 120px; }
 .capacity-over-days { color: var(--ds-text-danger, #ae2a19); font-weight: 650; }
 .capacity-legend { margin: 14px 0 0; }
+.time-logging-footer .status { font-variant-numeric: tabular-nums; }
+.time-logging-message { font-variant-numeric: tabular-nums; }
+.time-logging-message:empty { display: none; }
 .issue-count-link { border: 0; padding: 0; background: transparent; color: var(--ds-link, #0c66e4); cursor: pointer; font: inherit; font-weight: inherit; text-align: inherit; text-decoration: underline; text-underline-offset: 2px; vertical-align: baseline; }
 .issue-count-link:hover { color: var(--ds-link-pressed, #0055cc); }
 .issue-count-link:focus-visible { outline: 2px solid var(--ds-border-focused, #388bff); outline-offset: 3px; border-radius: 2px; }
