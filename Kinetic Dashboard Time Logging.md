@@ -1,5 +1,0 @@
-A list of people working on the JQL's issues, each with their average time logged per working day so far and a bar scaled to the highest average.
-
-Treat people as anyone assigned to an issue in the selected Controller JQL or who logged work on one. Each person's time is the work they logged on those issues (by worklog author) from the Start Date to today, or to the End Date once it has passed, both inclusive, in the viewer's Jira time zone. Work logged on a Saturday or Sunday, or outside those dates, is left out. The average is that time divided by the working days (Monday to Friday) so far, shown in hours and minutes to the nearest minute. Holidays and leave are not counted. Today counts as a full working day, so averages can dip early in the day. People with nothing logged show 0m. There is no Unassigned row. Sort highest average first. Each person's issue count opens the issues they logged work on in the period, including weekend work. The footer shows the average across everyone listed.
-
-The filter needs a Start Date; the End Date is optional. Use the whole JQL, including Done, and ignore the Controller's Show ticks.
