@@ -348,7 +348,8 @@ test('KDG-24 issue-list: pages, sorting and the link use the narrowed JQL', with
   await flush();
   assertPlainNote(g, 'Hiding: Closed and unlisted Done statuses');
   const panel = g.panel().children.map(child => child.className);
-  assert.deepEqual(panel.slice(1, 4), ['chart-filter-name', 'muted status-hidden-note', 'dashboard-table-scroll']);
+  assert.deepEqual(panel.slice(1, 5), ['chart-filter-name', 'muted status-hidden-note',
+    'muted issue-list-sort-note', 'dashboard-table-scroll']);
   const [first] = g.pending('search/jql');
   assert.equal(first.body.jql, `${NARROWED} ORDER BY rank`);
   first.resolve(ok({ issues: MIXED.slice(0, 2), nextPageToken: 'p2', isLast: false }));
@@ -421,7 +422,9 @@ test('KDG-24 counter: other failures with explicit names keep their own message'
   assert.equal(g.find('status').textContent, 'You cannot view issues for this filter.');
 }));
 
-test('KDG-24 issue-list: a 400 on a sorted load keeps the existing message (the sort field may be the cause)',
+// KDG-18 replaced "keep the existing message": a 400 on a sorted load drops the sort and
+// reloads unsorted; if that reload is rejected too, the status-name message applies.
+test('KDG-24 issue-list: a 400 on a sorted load, then on the unsorted reload, says a status name was not accepted',
   withTimers(async () => {
     const g = await startGadget('issue-list');
     await g.bus.send(FILTER_SELECTED, selection(SELECTED));
@@ -432,7 +435,12 @@ test('KDG-24 issue-list: a 400 on a sorted load keeps the existing message (the 
     await flush();
     g.pending('search/jql')[0].resolve(fail(400));
     await flush();
-    assert.equal(g.find('status').textContent, 'The selected JQL or column selection is invalid.');
+    const [reload] = g.pending('search/jql');
+    assert.equal(reload.body.jql, NARROWED, 'reloaded without the sort');
+    reload.resolve(fail(400));
+    await flush();
+    assert.equal(g.find('status').textContent, STATUS_NAME_ERROR);
+    assert.equal(g.find('issue-list-sort-note').hidden, true, 'no sort note for a JQL problem');
   }));
 
 // ---- the note ----
