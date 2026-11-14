@@ -133,6 +133,9 @@ textarea.text-input { resize: vertical; min-height: 62px; }
 .dashboard-table td { min-width: 90px; max-width: 320px; overflow-wrap: anywhere; }
 .dashboard-table .number-cell { min-width: 55px; text-align: right; font-variant-numeric: tabular-nums; }
 .issue-list-more { margin-top: 10px; }
+.issue-list-sort-note { margin: -8px 0 12px; font-size: 12px; overflow-wrap: anywhere; }
+.status-hidden-note:not([hidden]) + .issue-list-sort-note { margin-top: 0; }
+.issue-list-sort-note[hidden] { display: none; }
 .column-list { display: grid; gap: 8px; margin: 14px 0; }
 .column-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 6px; align-items: center; }
 .column-row .button { min-width: 34px; }

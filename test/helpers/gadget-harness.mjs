@@ -20,6 +20,10 @@ export async function flush(rounds = 20) {
 export const ok = body => ({ ok: true, status: 200, json: async () => body });
 export const fail = (status, body = {}) => ({ ok: false, status, json: async () => body });
 
+// KDG-18: the List reads Jira's field catalogue on load in view mode, before any selection.
+// It is not a search, so tests counting Jira searches leave it out.
+export const FIELD_CATALOGUE = '/rest/api/3/field';
+
 // ---------------------------------------------------------------------------------------------
 // Bundling
 

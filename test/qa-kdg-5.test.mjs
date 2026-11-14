@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test, { mock } from 'node:test';
 import { FILTER_REQUEST, FILTER_SELECTED, GADGET_REFRESH, REFRESH_ANSWERED_MS } from '../static/shared.mjs';
-import { createBus, fail, flush, ok, sameFilter, selection, startGadget } from './helpers/gadget-harness.mjs';
+import { FIELD_CATALOGUE, createBus, fail, flush, ok, sameFilter, selection, startGadget } from './helpers/gadget-harness.mjs';
 
 const ADD_CONTROLLER = 'Add a Kinetic Dashboard Controller to this dashboard.';
 const GADGETS = ['status-chart', 'status-pie', 'progress-bar', 'burndown', 'counter', 'dates',
@@ -194,7 +194,7 @@ for (const name of FETCHING) {
       assert.equal(g.emitted(FILTER_REQUEST).length, 2);
       await tick(3000);
       assert.ok(g.root.textContent.includes(ADD_CONTROLLER), g.root.textContent);
-      assert.equal(g.requests.length, 0);
+      assert.equal(g.requests.filter(r => r.path !== FIELD_CATALOGUE).length, 0);
     }));
 }
 

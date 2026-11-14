@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test, { mock } from 'node:test';
 import { FILTER_REQUEST, FILTER_SELECTED, GADGET_REFRESH, REFRESH_ANSWERED_MS } from '../static/shared.mjs';
-import { createBus, flush, ok, sameFilter, selection, startGadget } from './helpers/gadget-harness.mjs';
+import { FIELD_CATALOGUE, createBus, flush, ok, sameFilter, selection, startGadget } from './helpers/gadget-harness.mjs';
 
 const ADD_CONTROLLER = 'Add a Kinetic Dashboard Controller to this dashboard.';
 // Every display gadget (the Controller has its own tests in ui-controller.test.mjs).
@@ -60,6 +60,8 @@ async function answerAll(g, jira, jqls) {
 
 const select = (g, overrides) => g.bus.send(FILTER_SELECTED, selection(overrides));
 const shows = (g, text) => g.root.textContent.includes(text);
+// Jira requests other than the List's field catalogue read (KDG-18), which is not a search.
+const dataRequests = g => g.requests.filter(r => r.path !== FIELD_CATALOGUE);
 
 // ---------------------------------------------------------------------------------------------
 // The event contract every gadget follows (README (the paragraph starting "Add one Controller")).
@@ -68,7 +70,7 @@ for (const name of GADGETS) {
   test(`KDG-7 ${name}: sends filter.request for its dashboard on load`, withTimers(async () => {
     const g = await startGadget(name);
     assert.deepEqual(g.emitted(FILTER_REQUEST).map(e => e.payload), [{ dashboardId: 'd1' }]);
-    assert.equal(g.requests.length, 0, 'no Jira request before a selection');
+    assert.equal(dataRequests(g).length, 0, 'no Jira request before a selection');
     assert.ok(shows(g, 'Waiting for the controller…') || name === 'progress-bar',
       g.root.textContent);
   }));
@@ -80,7 +82,7 @@ for (const name of GADGETS) {
     await select(g, { dashboardId: undefined, name: 'No dashboard' });
     await select(g, { dashboardId: 'D1', name: 'Wrong case' });
     await flush();
-    assert.equal(g.requests.length, 0);
+    assert.equal(dataRequests(g).length, 0);
     assert.equal(g.root.textContent, before, 'nothing on screen changed');
     mock.timers.tick(4000); await flush();
     assert.ok(shows(g, ADD_CONTROLLER), 'still treated as having no Controller');
@@ -110,7 +112,7 @@ for (const name of GADGETS) {
       await select(g, { name: null, jql: null, startDate: null, endDate: null });
       await flush();
       mock.timers.tick(4000); await flush();
-      assert.equal(g.requests.length, 0);
+      assert.equal(dataRequests(g).length, 0);
       assert.ok(!shows(g, ADD_CONTROLLER), g.root.textContent);
       assert.match(g.root.textContent, /(Choose|Configure) a filter in the [Cc]ontroller\./);
     }));
@@ -127,7 +129,7 @@ for (const name of GADGETS) {
     await g.bus.send(GADGET_REFRESH, undefined);
     await flush();
     assert.equal(g.emitted(FILTER_REQUEST).length, 3, 'refresh of another gadget is ignored');
-    assert.equal(g.requests.length, 0);
+    assert.equal(dataRequests(g).length, 0);
   }));
 
   test(`KDG-7 ${name}: without a dashboard ID it shows an error and sends nothing`, withTimers(async () => {

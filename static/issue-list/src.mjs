@@ -58,7 +58,7 @@ async function edit(context) {
 
   const form = node('form', 'panel issue-list-edit');
   const heading = node('h2', 'config-heading', 'Issue list columns');
-  const help = node('p', 'muted', 'Choose up to 10 columns and arrange their order. Click a heading in the list to sort all matching issues. The list loads 50 issues at a time.');
+  const help = node('p', 'muted', "Choose up to 10 columns and arrange their order. Click a heading in the list to sort all matching issues; some fields, such as Description, can't be sorted. The list loads 50 issues at a time.");
   const rows = node('div', 'column-list');
   const add = node('button', 'button secondary', 'Add column');
   add.type = 'button';
@@ -149,6 +149,7 @@ async function display(context) {
     button.type = 'button';
     button.addEventListener('click', () => {
       sort = { field: column, direction: sort?.field === column && sort.direction === 'ASC' ? 'DESC' : 'ASC' };
+      showSortNote('');
       updateSortHeadings();
       refresh();
     });
@@ -166,7 +167,11 @@ async function display(context) {
   const message = node('p', 'status', 'Waiting for the controller…');
   message.setAttribute('role', 'status');
   const note = createHiddenNote();
-  panel.append(heading, filterName, note.element, scroll, more, message);
+  // KDG-18: says when Jira rejected a column sort and the list fell back to the filter's order.
+  const sortNote = node('p', 'muted issue-list-sort-note');
+  sortNote.setAttribute('role', 'status');
+  sortNote.hidden = true;
+  panel.append(heading, filterName, note.element, sortNote, scroll, more, message);
   root.replaceChildren(panel);
 
   let active = null;
@@ -187,6 +192,47 @@ async function display(context) {
     }
   }
   updateSortHeadings();
+
+  function showSortNote(text) {
+    sortNote.textContent = text;
+    sortNote.hidden = !text;
+  }
+
+  // KDG-18: a heading Jira can't sort by becomes a plain column header for the rest of the session.
+  function makeUnsortable(column) {
+    const entry = sortButtons.get(column);
+    if (!entry) return;
+    sortButtons.delete(column);
+    const { cell, button } = entry;
+    const hadFocus = document.activeElement === button;
+    cell.removeAttribute('aria-sort');
+    cell.setAttribute('title', "Jira can't sort by this field");
+    cell.replaceChildren(labels.get(column) ?? column);
+    if (hadFocus) {
+      const next = sortButtons.values().next().value?.button;
+      if (next) next.focus();
+      else {
+        table.tabIndex = -1;
+        table.focus();
+      }
+    }
+  }
+
+  // View mode reads Jira's field catalogue once. Only fields Jira marks `orderable: false` lose
+  // their sort button; until (or unless) the catalogue loads every heading stays sortable and a
+  // rejected sort is handled by the fallback in loadPage.
+  async function loadSortableFields() {
+    try {
+      const response = await requestJira('/rest/api/3/field', { headers: { Accept: 'application/json' } });
+      if (!response?.ok) return;
+      const available = await response.json();
+      if (!Array.isArray(available)) return;
+      const builtIn = new Set(fallbackFields.map(field => field.id));
+      for (const field of available) {
+        if (field?.orderable === false && !builtIn.has(field.id)) makeUnsortable(field.id);
+      }
+    } catch { /* keep every heading sortable */ }
+  }
 
   function priorityIcon(priority) {
     if (!priority?.iconUrl) return node('span', '', formatIssueField(priority));
@@ -234,6 +280,7 @@ async function display(context) {
     more.disabled = true;
     message.textContent = 'Loading matching issues…';
     const pageJira = trackBadRequest(requestJira);
+    const usedSort = sort;
     try {
       const query = sort ? orderedJql(active.shownJql, sort.field, sort.direction) : active.shownJql;
       const page = await searchIssuePage(pageJira.requestJira, query, fields, nextPageToken, 50,
@@ -256,8 +303,19 @@ async function display(context) {
       else message.textContent = 'No issues in shown statuses.';
     } catch (error) {
       if (current !== generation) return;
-      // With a column sort the 400 may be the sort field, so the existing message is kept.
-      const shown = sort ? error : statusNameError(error, pageJira, active.visibility);
+      if (usedSort && pageJira.badRequest) {
+        // KDG-18: Jira rejected the sorted search, most likely because it can't sort by that
+        // field. Drop the sort, make the heading plain and reload in the filter's own order.
+        // If that reload fails too, it is a JQL problem and gets the normal error below.
+        sort = null;
+        makeUnsortable(usedSort.field);
+        updateSortHeadings();
+        showSortNote(`Jira couldn't sort by ${labels.get(usedSort.field) ?? usedSort.field}, so issues are in the filter's order.`);
+        refresh();
+        return;
+      }
+      if (!usedSort && !loaded) showSortNote('');
+      const shown = usedSort ? error : statusNameError(error, pageJira, active.visibility);
       message.textContent = shown.message || 'Could not load the issue list.';
     } finally {
       if (current === generation) {
@@ -285,6 +343,7 @@ async function display(context) {
   }
 
   more.addEventListener('click', () => { void loadPage(); });
+  void loadSortableFields();
   const selection = createSelectionTracker({ gadgetId: gadgetId(context), onFallback: () => refresh() });
   await events.on(FILTER_SELECTED, payload => {
     if (!isForDashboard(payload, id) || !selection.accept(payload)) return;
@@ -293,6 +352,7 @@ async function display(context) {
     active = { name: payload.name, jql: payload.jql, visibility,
       shownJql: payload.jql ? visibilityJql(payload.jql, visibility) : payload.jql };
     filterName.textContent = active.name ?? '';
+    showSortNote('');
     refresh();
   });
   await events.on(GADGET_REFRESH, payload => {
