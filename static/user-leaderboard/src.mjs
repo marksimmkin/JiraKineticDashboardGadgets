@@ -3,7 +3,10 @@ import { searchAllIssues, summarizeAssignees } from '../issue-data.mjs';
 import { assigneeClause, issueCountButton, narrowJql, statusesClause } from '../drilldown.mjs';
 import { hiddenNote, shownIssues, statusVisibility } from '../status-visibility.mjs';
 import { createHiddenNote } from '../status-note.mjs';
-import { createUserMetricSelect, formatMetric, metricLabel, metricValue } from '../user-metrics.mjs';
+import { DEFAULT_USER_HOURS_PER_DAY, createUserMetricSelect, formatMetric, metricLabel, metricValue,
+  timeRemainingNodes, timeRemainingSpoken } from '../user-metrics.mjs';
+import { hoursPerDay } from '../capacity.mjs';
+import { showHoursEditForm } from '../hours-edit.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
   GADGET_REFRESH, createSelectionTracker, isForDashboard, statusKey } from '../shared.mjs';
 
@@ -21,6 +24,20 @@ async function main() {
   try {
     await view.theme.enable();
     const context = await view.getContext();
+    const config = context.extension?.gadgetConfiguration;
+    const hours = hoursPerDay(config, DEFAULT_USER_HOURS_PER_DAY);
+    if (context.extension?.entryPoint === 'edit') {
+      // KDG-28: the only setting; other saved configuration is kept.
+      showHoursEditForm(root, {
+        submit: payload => view.submit(payload),
+        idPrefix: 'user-leaderboard',
+        heading: 'Leaderboard settings',
+        help: 'Turns Remaining Estimate into days for Total time remaining. Applies to everyone. Default 7.',
+        value: hours,
+        keep: config && typeof config === 'object' && !Array.isArray(config) ? config : {},
+      });
+      return;
+    }
     const id = dashboardId(context);
     if (!id) throw new Error('Dashboard context is unavailable.');
     const panel = node('section', 'panel user-leaderboard');
@@ -51,7 +68,9 @@ async function main() {
           narrowJql(visibleJql, [assigneeClause(row.id)]),
           `Open ${row.total} issues assigned to ${row.name}`), ' tickets');
         else {
-          detail.append(`${formatMetric(metricValue(row, metric), metric)} ${metric === 'time' ? 'remaining' : 'weighted score'} · `,
+          if (metric === 'time') detail.append(...timeRemainingNodes(row.timeRemaining, hours), ' remaining · ');
+          else detail.append(`${formatMetric(metricValue(row, metric), metric)} weighted score · `);
+          detail.append(
             issueCountButton(router, numberFormat.format(row.total),
               narrowJql(visibleJql, [assigneeClause(row.id)]),
               `Open ${row.total} issues assigned to ${row.name}`),
@@ -68,6 +87,9 @@ async function main() {
         track.setAttribute('aria-valuemin', '0');
         track.setAttribute('aria-valuemax', String(maximum));
         track.setAttribute('aria-valuenow', String(metricValue(row, metric)));
+        if (metric === 'time') {
+          track.setAttribute('aria-valuetext', timeRemainingSpoken(row.timeRemaining, hours));
+        }
         track.append(fill);
         line.append(name, detail);
         item.append(line, track);
