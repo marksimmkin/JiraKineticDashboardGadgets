@@ -13,11 +13,12 @@ export async function countIssues(requestJira, jql, { isCurrent } = {}) {
 
 // Jira's fast estimated count. It may lag recent updates, so callers should replace it with
 // countIssues. ORDER BY is dropped in case the endpoint rejects it, and an order-only
-// JQL is rejected here rather than sent.
-export async function approximateCount(requestJira, jql) {
+// JQL is rejected here rather than sent. `isCurrent`, if given, stops a rate-limit retry with
+// SupersededError (see jira-request.mjs).
+export async function approximateCount(requestJira, jql, { isCurrent } = {}) {
   const { filter } = splitOrderBy(String(jql ?? ''));
   if (!filter) throw new Error('An approximate count needs a JQL filter.');
-  const result = await postJira(requestJira, APPROXIMATE_COUNT_PATH, { jql: filter });
+  const result = await postJira(requestJira, APPROXIMATE_COUNT_PATH, { jql: filter }, undefined, { isCurrent });
   const count = result?.count;
   if (!Number.isSafeInteger(count) || count < 0) {
     throw new Error('Jira returned an invalid approximate count.');
