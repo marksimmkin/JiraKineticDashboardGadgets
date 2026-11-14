@@ -3,8 +3,11 @@ import { searchAllIssues, summarizeAssignees } from '../issue-data.mjs';
 import { assigneeClause, issueCountButton, narrowJql, statusClause, statusesClause } from '../drilldown.mjs';
 import { hiddenNote, shownIssues, statusVisibility } from '../status-visibility.mjs';
 import { createHiddenNote } from '../status-note.mjs';
-import { createUserMetricSelect, formatMetric, metricLabel, metricValue } from '../user-metrics.mjs';
+import { DEFAULT_USER_HOURS_PER_DAY, createUserMetricSelect, formatMetric, metricLabel, metricValue,
+  timeRemainingNodes } from '../user-metrics.mjs';
 import { sortedUserRows } from '../user-list-sort.mjs';
+import { hoursPerDay } from '../capacity.mjs';
+import { showHoursEditForm } from '../hours-edit.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
   GADGET_REFRESH, createSelectionTracker, isForDashboard, statusKey } from '../shared.mjs';
 
@@ -22,6 +25,21 @@ async function main() {
   try {
     await view.theme.enable();
     const context = await view.getContext();
+    const config = context.extension?.gadgetConfiguration;
+    const hours = hoursPerDay(config, DEFAULT_USER_HOURS_PER_DAY);
+    if (context.extension?.entryPoint === 'edit') {
+      // KDG-28: the only setting; other saved configuration is kept.
+      showHoursEditForm(root, {
+        submit: payload => view.submit(payload),
+        idPrefix: 'user-list',
+        className: 'hours-edit',
+        heading: 'User list settings',
+        help: 'Turns Remaining Estimate into days for Total time remaining. Applies to everyone. Default 7.',
+        value: hours,
+        keep: config && typeof config === 'object' && !Array.isArray(config) ? config : {},
+      });
+      return;
+    }
     const id = dashboardId(context);
     if (!id) throw new Error('Dashboard context is unavailable.');
     const panel = node('section', 'panel user-list');
@@ -78,6 +96,7 @@ async function main() {
         if (metric === 'tickets') totalCell.append(issueCountButton(router, formatMetric(row.total, metric),
           narrowJql(visibleJql, [assigneeClause(row.id)]),
           `Open ${row.total} issues assigned to ${row.name}`));
+        else if (metric === 'time') totalCell.append(...timeRemainingNodes(row.timeRemaining, hours));
         else totalCell.textContent = formatMetric(metricValue(row, metric), metric);
         if (metric === 'time' && row.estimatedIssues < row.total) {
           totalCell.title = `Remaining estimate set on ${row.estimatedIssues} of ${row.total} issues`;

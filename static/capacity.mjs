@@ -8,9 +8,10 @@ function validHours(value) {
 }
 
 // `config` is the gadget's saved configuration (context.extension.gadgetConfiguration).
-export function hoursPerDay(config) {
+// `fallback` is used when nothing valid is saved (User List and User Leaderboard default to 7).
+export function hoursPerDay(config, fallback = DEFAULT_HOURS_PER_DAY) {
   const value = config?.hoursPerDay;
-  return validHours(value) ? value : DEFAULT_HOURS_PER_DAY;
+  return validHours(value) ? value : fallback;
 }
 
 // Edit-form input: "7.5", "7,5", " 8 " are accepted. Returns the number, or null when the text is

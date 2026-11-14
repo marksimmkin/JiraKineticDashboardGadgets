@@ -62,12 +62,16 @@ modules:
       description: Count matching issues by assignee and status.
       thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
       resource: user-list
+      edit:
+        resource: user-list
       refreshable: false
     - key: kinetic-dashboard-user-leaderboard
       title: Kinetic Dashboard User Leaderboard
       description: Compare weighted remaining issue scores by assignee.
       thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
       resource: user-leaderboard
+      edit:
+        resource: user-leaderboard
       refreshable: false
     - key: kinetic-dashboard-capacity
       title: Kinetic Dashboard Capacity

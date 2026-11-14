@@ -3,7 +3,8 @@ import { searchAllIssues, summarizeAssignees } from '../issue-data.mjs';
 import { assigneeClause, issueCountButton, narrowJql, statusesClause } from '../drilldown.mjs';
 import { hiddenNote, shownIssues, statusVisibility } from '../status-visibility.mjs';
 import { createHiddenNote } from '../status-note.mjs';
-import { capacityRows, hoursPerDay, parseHoursInput, workingDaysLeft } from '../capacity.mjs';
+import { capacityRows, hoursPerDay, workingDaysLeft } from '../capacity.mjs';
+import { showHoursEditForm } from '../hours-edit.mjs';
 import { dateOrdinal, todayInTimezone } from '../progress.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
   GADGET_REFRESH, createSelectionTracker, isForDashboard, statusKey } from '../shared.mjs';
@@ -57,59 +58,14 @@ function rangeText(payload, left) {
   return `${span} · ${workingDays(left.days)} left`;
 }
 
-async function edit(context) {
-  const form = node('form', 'panel capacity-edit');
-  form.noValidate = true; // our own error message replaces the browser's validation bubble
-  const heading = node('h2', 'config-heading', 'Capacity settings');
-  const label = node('label', 'field-label', 'Hours per working day');
-  label.htmlFor = 'capacity-hours';
-  const input = node('input', 'text-input');
-  input.id = 'capacity-hours';
-  // Text, not number: a number input reports '' for "7,5" in many locales; parseHoursInput validates.
-  input.type = 'text';
-  input.required = true;
-  input.setAttribute('inputmode', 'decimal');
-  input.setAttribute('aria-describedby', 'capacity-hours-help');
-  input.value = String(hoursPerDay(context?.extension?.gadgetConfiguration));
-  label.append(input);
-  const help = node('p', 'muted', 'Turns Remaining Estimate into days. Applies to everyone. Default 8.');
-  help.id = 'capacity-hours-help';
-  const error = node('p', 'error');
-  error.id = 'capacity-hours-error';
-  error.setAttribute('role', 'alert');
-  const save = node('button', 'button primary', 'Save settings');
-  save.type = 'submit';
-  form.append(heading, label, help, error, save);
-  root.replaceChildren(form);
-
-  function showError(text) {
-    error.textContent = text;
-    if (text) {
-      input.setAttribute('aria-invalid', 'true');
-      input.setAttribute('aria-describedby', 'capacity-hours-help capacity-hours-error');
-    } else {
-      input.removeAttribute('aria-invalid');
-      input.setAttribute('aria-describedby', 'capacity-hours-help');
-    }
-  }
-
-  input.addEventListener('input', () => { if (error.textContent) showError(''); });
-  form.addEventListener('submit', async event => {
-    event.preventDefault();
-    const value = parseHoursInput(input.value);
-    if (value === null) {
-      showError('Enter hours from 1 to 24, for example 7.5.');
-      input.focus();
-      return;
-    }
-    showError('');
-    save.disabled = true;
-    try {
-      await view.submit({ hoursPerDay: Number(value) });
-    } catch {
-      error.textContent = 'Could not save the settings. Please try again.';
-      save.disabled = false;
-    }
+function edit(context) {
+  showHoursEditForm(root, {
+    submit: payload => view.submit(payload),
+    idPrefix: 'capacity',
+    className: 'capacity-edit',
+    heading: 'Capacity settings',
+    help: 'Turns Remaining Estimate into days. Applies to everyone. Default 8.',
+    value: hoursPerDay(context?.extension?.gadgetConfiguration),
   });
 }
 
