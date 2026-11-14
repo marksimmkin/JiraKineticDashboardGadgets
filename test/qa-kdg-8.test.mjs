@@ -54,8 +54,13 @@ test('QA KDG-8: boundary edge cases split or stay as filter text', () => {
 });
 
 test('QA KDG-8: very long JQL with a glued ORDER BY splits quickly', () => {
+  // KDG-21: measures this process's CPU time, not wall-clock time, so other load on the
+  // machine does not count (same approach as KDG-12). A linear split of this ~550k-character
+  // JQL uses tens of ms of CPU; a quadratic one uses far more than the limit.
   const jql = `project = A${' AND c = "d"'.repeat(50000)}ORDER BY z`;
-  const started = Date.now();
+  const start = process.cpuUsage();
   assert.equal(splitOrderBy(jql).order, 'ORDER BY z');
-  assert.ok(Date.now() - started < 1000);
+  const used = process.cpuUsage(start);
+  const cpuMs = (used.user + used.system) / 1000;
+  assert.ok(cpuMs < 1000, `splitOrderBy used ${cpuMs.toFixed(0)} ms of CPU`);
 });
