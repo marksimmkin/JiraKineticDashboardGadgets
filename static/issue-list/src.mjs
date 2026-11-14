@@ -1,4 +1,5 @@
 import { events, requestJira, router, view } from '@forge/bridge';
+import { requestJiraWithRetry } from '../jira-request.mjs';
 import { configuredColumns, formatIssueField, orderedJql, searchIssuePage } from '../issue-data.mjs';
 import { issueCountButton } from '../drilldown.mjs';
 import { hiddenNote, statusVisibility, visibilityJql } from '../status-visibility.mjs';
@@ -34,7 +35,8 @@ async function edit(context) {
   let fields = fallbackFields;
   let loadWarning = '';
   try {
-    const response = await requestJira('/rest/api/3/field', { headers: { Accept: 'application/json' } });
+    const response = await requestJiraWithRetry(requestJira, '/rest/api/3/field',
+      { headers: { Accept: 'application/json' } });
     if (!response.ok) throw new Error();
     const available = await response.json();
     if (!Array.isArray(available)) throw new Error();

@@ -32,8 +32,8 @@ const BURNDOWN_MESSAGES = {
   repeatedPage: 'Jira did not provide the next issue page.',
 };
 
-function postJira(requestJira, path, body) {
-  return postJiraRequest(requestJira, path, body, BURNDOWN_MESSAGES);
+function postJira(requestJira, path, body, options) {
+  return postJiraRequest(requestJira, path, body, BURNDOWN_MESSAGES, options);
 }
 
 // `onPage(loadedSoFar)`, if given, is called after each search page with the running total.
@@ -76,7 +76,8 @@ async function fetchStatusChangeBatch(requestJira, ids, aborted, isCurrent) {
     if (nextPageToken && !isCurrent()) throw new SupersededError();
     const body = { issueIdsOrKeys: ids, fieldIds: ['status'], maxResults: 1000 };
     if (nextPageToken) body.nextPageToken = nextPageToken;
-    const page = await postJira(requestJira, '/rest/api/3/changelog/bulkfetch', body);
+    const page = await postJira(requestJira, '/rest/api/3/changelog/bulkfetch', body,
+      { isCurrent: () => isCurrent() && !aborted() });
     if (aborted()) return changes;
     if (!Array.isArray(page?.issueChangeLogs)) throw new Error(INVALID_HISTORY);
     for (const item of page.issueChangeLogs) {

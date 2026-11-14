@@ -68,9 +68,10 @@ for (const caller of searchCallers) {
     }
   });
 
-  test(`${caller.name} shows its own wording for a null body, 429 and errors on a later page`, async () => {
+  // KDG-17: a 429 is now retried (see kdg-17-rate-limit.test.mjs), so a 502 shows the wording.
+  test(`${caller.name} shows its own wording for a null body, 502 and errors on a later page`, async () => {
     await assert.rejects(caller.run(mock([ok(null)]).request, 'x'), { message: caller.invalid });
-    await assert.rejects(caller.run(mock([fail(429)]).request, 'x'), { message: caller.failed(429) });
+    await assert.rejects(caller.run(mock([fail(502)]).request, 'x'), { message: caller.failed(502) });
     await assert.rejects(caller.run(mock([ok({ issues: [], nextPageToken: 'a' }), fail(403)]).request, 'x'),
       { message: caller.forbidden });
   });
@@ -82,8 +83,8 @@ test('searchIssuePage keeps the List page size, omits an empty token and rejects
   assert.equal(calls[0].options.body, JSON.stringify({ jql: 'x', fields: ['key'], maxResults: 50 }));
   await assert.rejects(searchIssuePage(mock([ok(null)]).request, 'x', ['key'], undefined, 50),
     { message: 'Jira returned an invalid search result.' });
-  await assert.rejects(searchIssuePage(mock([fail(429)]).request, 'x', ['key'], undefined, 50),
-    { message: 'Jira search failed (429).' });
+  await assert.rejects(searchIssuePage(mock([fail(502)]).request, 'x', ['key'], undefined, 50),
+    { message: 'Jira search failed (502).' });
 });
 
 test('fetchStatusChanges keeps its request body and Burndown error wording', async () => {

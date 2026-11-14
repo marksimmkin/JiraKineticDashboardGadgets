@@ -1,4 +1,5 @@
 import { events, requestJira, view } from '@forge/bridge';
+import { requestJiraWithRetry } from '../jira-request.mjs';
 import { configuredFilters, configuredStatuses, dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
   GADGET_REFRESH, isForDashboard, selectedFilterPayload, STATUS_COLORS, statusKey, validateFilters, validateStatuses } from '../shared.mjs';
 
@@ -28,7 +29,8 @@ async function edit(context) {
   let jiraStatuses = [];
   let statusLoadError = '';
   try {
-    const response = await requestJira('/rest/api/3/status', { headers: { Accept: 'application/json' } });
+    const response = await requestJiraWithRetry(requestJira, '/rest/api/3/status',
+      { headers: { Accept: 'application/json' } });
     if (!response.ok) throw new Error();
     const results = await response.json();
     if (!Array.isArray(results)) throw new Error();
