@@ -11,7 +11,7 @@
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
-    "@forge/bridge": "7.1.0"
+    "@forge/bridge": "7.3.0"
   },
   "devDependencies": {
     "esbuild": "0.28.2"
