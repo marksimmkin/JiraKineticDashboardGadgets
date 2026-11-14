@@ -26,8 +26,10 @@ const ISSUE_SEARCH_MESSAGES = {
   repeatedPage: 'Jira repeated a search page.',
 };
 
-export async function searchIssuePage(requestJira, jql, fields, nextPageToken, maxResults = 1000) {
-  return searchPage(requestJira, jql, fields, { nextPageToken, maxResults, messages: ISSUE_SEARCH_MESSAGES });
+export async function searchIssuePage(requestJira, jql, fields, nextPageToken, maxResults = 1000,
+  { isCurrent } = {}) {
+  return searchPage(requestJira, jql, fields,
+    { nextPageToken, maxResults, messages: ISSUE_SEARCH_MESSAGES, isCurrent });
 }
 
 // `isCurrent`, if given, stops the walk early with SupersededError (see searchPages).

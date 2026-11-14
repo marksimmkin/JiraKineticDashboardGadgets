@@ -2,11 +2,12 @@
 import assert from 'node:assert/strict';
 import test, { mock } from 'node:test';
 import {
-  busyMessage, JiraBusyError, MAX_WAIT_MS, requestJiraWithRetry, retryAfterMs, RETRY_LIMIT,
-  SupersededError,
+  busyMessage, JiraBusyError, MAX_WAIT_MS, rateLimitResetMs, requestJiraWithRetry, retryAfterMs,
+  RETRY_LIMIT, SupersededError,
 } from '../static/jira-request.mjs';
 import { isSuperseded, searchPages } from '../static/jira-search.mjs';
-import { countIssues } from '../static/count.mjs';
+import { approximateCount, countIssues } from '../static/count.mjs';
+import { searchIssuePage } from '../static/issue-data.mjs';
 import { fetchStatusChanges } from '../static/burndown.mjs';
 import { flush, ok, selection, startGadget } from './helpers/gadget-harness.mjs';
 import { FILTER_SELECTED } from '../static/shared.mjs';
@@ -27,9 +28,10 @@ function fakeJira(responses) {
   return { request, calls };
 }
 
-function clock() {
+// random() = 0.5: plain backoff is exactly 1s, 2s, 4s and header waits get +250 ms jitter.
+function clock(random = 0.5) {
   const waits = [];
-  return { waits, sleep: async ms => { waits.push(ms); }, now: () => NOW, random: () => 0.5 };
+  return { waits, sleep: async ms => { waits.push(ms); }, now: () => NOW, random: () => random };
 }
 
 test('retryAfterMs reads seconds, HTTP dates and plain-object headers, and ignores junk', () => {
@@ -62,7 +64,7 @@ test('a 429 with Retry-After in seconds waits that long and retries the same req
   const options = { method: 'POST', body: '{"x":1}' };
   const response = await requestJiraWithRetry(request, '/p', options, t);
   assert.equal(response.status, 200);
-  assert.deepEqual(t.waits, [3000]);
+  assert.deepEqual(t.waits, [3250]);
   assert.equal(calls.length, 2);
   assert.deepEqual(calls[1], { path: '/p', options });
 });
@@ -72,7 +74,7 @@ test('a 429 with an HTTP-date Retry-After waits until that time', async () => {
   const at = new Date(NOW + 8000).toUTCString();
   const { request } = fakeJira([res(429, { 'Retry-After': at }), res(200)]);
   await requestJiraWithRetry(request, '/p', {}, t);
-  assert.deepEqual(t.waits, [8000]);
+  assert.deepEqual(t.waits, [8250]);
 });
 
 test('a 429 without Retry-After backs off 1s, 2s, 4s, then shows the busy message', async () => {
@@ -93,6 +95,57 @@ test('backoff adds jitter between 70% and 130% of the step', async () => {
   }
 });
 
+test('repeated 429s with Retry-After: 1 back off 1s, 2s, 4s rather than 1s, 1s, 1s', async () => {
+  const t = clock(0);
+  const { request, calls } = fakeJira([1, 2, 3, 4].map(() => res(429, { 'Retry-After': '1' })));
+  await assert.rejects(requestJiraWithRetry(request, '/p', {}, t),
+    { message: 'Jira is busy. Try again in 1 second.' });
+  assert.deepEqual(t.waits, [1000, 2000, 4000]);
+  assert.equal(calls.length, 4);
+});
+
+test('Retry-After waits get 0-500 ms of jitter on top, still capped', async () => {
+  for (const [random, wait] of [[0, 3000], [1, 3500]]) {
+    const t = clock(random);
+    const { request } = fakeJira([res(429, { 'Retry-After': '3' }), res(200)]);
+    await requestJiraWithRetry(request, '/p', {}, t);
+    assert.deepEqual(t.waits, [wait]);
+  }
+  const t = clock(1);
+  const { request } = fakeJira([res(429, { 'Retry-After': String(MAX_WAIT_MS / 1000) }), res(200)]);
+  await requestJiraWithRetry(request, '/p', {}, t);
+  assert.deepEqual(t.waits, [MAX_WAIT_MS]);
+});
+
+test('without Retry-After, a 429 uses X-RateLimit-Reset (ISO timestamp)', async () => {
+  const now = () => NOW;
+  const reset = new Date(NOW + 6000).toISOString();
+  assert.equal(rateLimitResetMs(res(429, { 'X-RateLimit-Reset': reset }), now), 6000);
+  assert.equal(rateLimitResetMs(res(429, { 'X-RateLimit-Reset': 'soon' }), now), null);
+  assert.equal(rateLimitResetMs(res(429, { 'X-RateLimit-Reset': '1780000000' }), now), null);
+  assert.equal(rateLimitResetMs(res(429), now), null);
+
+  const t = clock(0);
+  const { request } = fakeJira([res(429, { 'X-RateLimit-Reset': reset }), res(200)]);
+  await requestJiraWithRetry(request, '/p', {}, t);
+  assert.deepEqual(t.waits, [6000]);
+
+  // Retry-After wins when both are sent.
+  const t2 = clock(0);
+  const both = fakeJira([res(429, { 'Retry-After': '2', 'X-RateLimit-Reset': reset }), res(200)]);
+  await requestJiraWithRetry(both.request, '/p', {}, t2);
+  assert.deepEqual(t2.waits, [2000]);
+
+  // The busy message uses it too.
+  const busy = fakeJira([1, 2, 3, 4].map(() => res(429, { 'X-RateLimit-Reset': reset })));
+  await assert.rejects(requestJiraWithRetry(busy.request, '/p', {}, clock(0)),
+    { message: 'Jira is busy. Try again in 6 seconds.' });
+
+  // A 503 still needs Retry-After.
+  const unavailable = fakeJira([res(503, { 'X-RateLimit-Reset': reset })]);
+  assert.equal((await requestJiraWithRetry(unavailable.request, '/p', {}, clock(0))).status, 503);
+});
+
 test('retries stop after the limit, and the message uses the last Retry-After rounded up', async () => {
   const t = clock();
   const { request, calls } = fakeJira([
@@ -101,7 +154,8 @@ test('retries stop after the limit, and the message uses the last Retry-After ro
   ]);
   await assert.rejects(requestJiraWithRetry(request, '/p', {}, t),
     { name: 'JiraBusyError', message: 'Jira is busy. Try again in 5 seconds.' });
-  assert.deepEqual(t.waits, [1000, 2000, 3000]);
+  // The longer of Retry-After and the 1s, 2s, 4s backoff, plus 250 ms jitter.
+  assert.deepEqual(t.waits, [1250, 2250, 4250]);
   assert.equal(calls.length, 4);
 });
 
@@ -123,7 +177,7 @@ test('a 503 retries only when Jira sends Retry-After', async () => {
   const t = clock();
   const withHeader = fakeJira([res(503, { 'Retry-After': '2' }), res(200)]);
   assert.equal((await requestJiraWithRetry(withHeader.request, '/p', {}, t)).status, 200);
-  assert.deepEqual(t.waits, [2000]);
+  assert.deepEqual(t.waits, [2250]);
 
   const t2 = clock();
   const without = fakeJira([res(503)]);
@@ -161,7 +215,8 @@ test('a load superseded during a wait sends no retry', async () => {
   const { request, calls } = fakeJira([res(429, { 'Retry-After': '5' }), res(200)]);
   await assert.rejects(requestJiraWithRetry(request, '/p', {}, { sleep, isCurrent: () => current }),
     error => error instanceof SupersededError && isSuperseded(error));
-  assert.deepEqual(waits, [5000]);
+  assert.equal(waits.length, 1);
+  assert.ok(waits[0] >= 5000 && waits[0] <= 5500, String(waits[0]));
   assert.equal(calls.length, 1);
 
   // Already superseded when the 429 arrives: no wait at all.
@@ -183,7 +238,7 @@ test('search paging retries a rate-limited page and checks isCurrent before the 
     const counting = countIssues(request, 'project = A');
     await flush();
     assert.equal(calls.length, 2);
-    mock.timers.tick(2000);
+    mock.timers.tick(2500);
     assert.equal(await counting, 3);
     assert.equal(calls.length, 3);
     assert.equal(JSON.parse(calls[2].options.body).nextPageToken, 'a');
@@ -195,7 +250,7 @@ test('search paging retries a rate-limited page and checks isCurrent before the 
     })();
     await flush();
     current = false;
-    mock.timers.tick(2000);
+    mock.timers.tick(2500);
     await assert.rejects(walk, SupersededError);
     assert.equal(superseded.calls.length, 1);
   } finally {
@@ -209,7 +264,7 @@ test('changelog bulkfetch shows the busy message when retries run out', async ()
     const { request, calls } = fakeJira([1, 2, 3, 4].map(() => res(429, { 'Retry-After': '1' })));
     const loading = fetchStatusChanges(request, [{ id: 1, fields: { updated: 'u' } }], { cache: new Map() });
     const outcome = loading.then(() => null, error => error);
-    for (let i = 0; i < 4; i += 1) { await flush(); mock.timers.tick(1000); }
+    for (let i = 0; i < 4; i += 1) { await flush(); mock.timers.tick(5000); }
     const error = await outcome;
     assert.equal(error?.message, 'Jira is busy. Try again in 1 second.');
     assert.equal(calls.length, 4);
@@ -240,7 +295,7 @@ for (const name of ['status-chart', 'counter']) {
         pending[0].resolve(res(429, { 'Retry-After': '10' }));
         await flush();
         assert.equal(g.pending('search/jql').length, 0, 'waits before retrying');
-        if (attempt <= RETRY_LIMIT) mock.timers.tick(10000);
+        if (attempt <= RETRY_LIMIT) mock.timers.tick(10500); // Retry-After plus up to 500 ms jitter
       }
       await flush();
       assert.equal(searches().length, RETRY_LIMIT + 1);
@@ -273,3 +328,49 @@ test('KDG-17 status-chart: a retried 429 that then succeeds shows the counts', a
     mock.timers.reset();
   }
 });
+
+test('a superseded approximate count or List page sends no retry', async () => {
+  for (const run of [
+    request => approximateCount(request, 'project = A', { isCurrent: () => false }),
+    request => searchIssuePage(request, 'project = A', ['key'], undefined, 50, { isCurrent: () => false }),
+  ]) {
+    const { request, calls } = fakeJira([res(429, { 'Retry-After': '1' })]);
+    mock.timers.enable({ apis: ['setTimeout'] });
+    try {
+      const outcome = run(request).then(() => null, error => error);
+      await flush();
+      mock.timers.tick(5000);
+      assert.ok((await outcome) instanceof SupersededError);
+      assert.equal(calls.length, 1);
+    } finally {
+      mock.timers.reset();
+    }
+  }
+});
+
+// A gadget load superseded by a new selection while it waits to retry sends no retry.
+for (const [name, part] of [['issue-list', 'search/jql'], ['counter', 'approximate-count'],
+  ['burndown', 'approximate-count']]) {
+  test(`KDG-17 ${name}: a superseded ${part} load sends no retry`, async () => {
+    mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: NOW });
+    const warn = mock.method(console, 'warn', () => {});
+    try {
+      const g = await startGadget(name);
+      await g.bus.send(FILTER_SELECTED, selection({ jql: 'project = A' }));
+      await flush();
+      const forA = () => g.requests.filter(r => r.path.includes(part) && r.body?.jql?.includes('project = A'));
+      assert.equal(forA().length, 1);
+      forA()[0].resolve(res(429, { 'Retry-After': '5' }));
+      await flush();
+      await g.bus.send(FILTER_SELECTED, selection({ name: 'Filter B', jql: 'project = B' }));
+      await flush();
+      mock.timers.tick(6000);
+      await flush();
+      assert.equal(forA().length, 1, 'no retry for the superseded load');
+      assert.ok(g.requests.some(r => r.path.includes(part) && r.body?.jql?.includes('project = B')));
+    } finally {
+      warn.mock.restore();
+      mock.timers.reset();
+    }
+  });
+}

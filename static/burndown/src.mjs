@@ -159,11 +159,11 @@ async function main() {
       const { jql, statuses, startDate, endDate } = active;
       const run = loader.start();
       // An ORDER BY-only JQL has no filter to estimate, so skip the request (as the Counter does).
+      const isCurrent = () => current === generation;
       if (splitOrderBy(jql).filter) {
-        approximateCount(requestJira, jql).then(run.approximate, error => console.warn(error));
+        approximateCount(requestJira, jql, { isCurrent }).then(run.approximate, error => console.warn(error));
       }
       try {
-        const isCurrent = () => current === generation;
         const issues = await fetchBurndownIssues(requestJira, jql, { onPage: run.page, isCurrent });
         if (current !== generation) return;
         run.searchDone();

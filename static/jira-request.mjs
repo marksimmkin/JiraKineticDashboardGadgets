@@ -2,17 +2,23 @@
 // retries when Jira rate limits the viewer, as Atlassian asks apps to do:
 // https://developer.atlassian.com/cloud/jira/platform/build-an-app-that-respects-rate-limits/
 //
-// - 429: wait for Retry-After (seconds or an HTTP date), or back off 1s, 2s, 4s (with jitter)
-//   when Jira sends no usable Retry-After, then retry.
+// - 429: wait for Retry-After (seconds or an HTTP date), else X-RateLimit-Reset (an ISO
+//   timestamp), then retry. Repeated 429s back off exponentially even when Jira keeps sending a
+//   small Retry-After (burst limits send "Retry-After: 1"): each wait is the longer of the
+//   header's delay and 1s, 2s, 4s for the 1st, 2nd and 3rd retry. Waits from a header get
+//   0-500 ms of random jitter on top, so gadgets on one dashboard don't all retry at once; plain
+//   backoff (no header) gets 70-130% jitter instead.
 // - 503: retried only when Jira sends Retry-After; otherwise the response is returned as is.
 // - Every other status (including other 4xx) is returned as is, without a retry.
-// - At most RETRY_LIMIT retries. A Retry-After longer than MAX_WAIT_MS is not waited for and
-//   not retried early, so the load fails straight away with the busy message.
+// - At most RETRY_LIMIT retries and no wait longer than MAX_WAIT_MS. A header delay longer than
+//   MAX_WAIT_MS is not waited for and not retried early, so the load fails straight away with
+//   the busy message.
 // - When retries run out, JiraBusyError is thrown with "Jira is busy. Try again in N seconds."
 
 export const RETRY_LIMIT = 3;
 export const MAX_WAIT_MS = 30000;
 export const BACKOFF_MS = 1000;
+export const HEADER_JITTER_MS = 500;
 
 // Thrown when a load stops because `isCurrent()` reported that its result is no longer wanted.
 // A superseded load never returns normally, so a partial result cannot be mistaken for a
@@ -64,6 +70,17 @@ export function retryAfterMs(response, now = Date.now) {
   return Number.isNaN(at) ? null : Math.max(0, at - now());
 }
 
+// Milliseconds until the response's X-RateLimit-Reset (an ISO timestamp, never negative), or
+// null when it is missing or unreadable.
+export function rateLimitResetMs(response, now = Date.now) {
+  const value = header(response, 'X-RateLimit-Reset');
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(text)) return null;
+  const at = Date.parse(text);
+  return Number.isNaN(at) ? null : Math.max(0, at - now());
+}
+
 const defaultSleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // Calls requestJira(path, options) and returns its response, retrying rate-limited responses
@@ -79,12 +96,17 @@ export async function requestJiraWithRetry(requestJira, path, options, {
     const response = await requestJira(path, options);
     const status = response?.status;
     if (status !== 429 && status !== 503) return response;
-    const retryAfter = retryAfterMs(response, now);
+    const retryAfter = status === 429
+      ? retryAfterMs(response, now) ?? rateLimitResetMs(response, now)
+      : retryAfterMs(response, now);
     if (status === 503 && retryAfter === null) return response;
     if (attempt >= retries || (retryAfter !== null && retryAfter > maxWaitMs)) {
       throw new JiraBusyError(retryAfter);
     }
-    const wait = retryAfter ?? Math.min(maxWaitMs, BACKOFF_MS * 2 ** attempt * (0.7 + 0.6 * random()));
+    const backoff = BACKOFF_MS * 2 ** attempt;
+    const wait = Math.min(maxWaitMs, retryAfter === null
+      ? backoff * (0.7 + 0.6 * random())
+      : Math.max(retryAfter, backoff) + HEADER_JITTER_MS * random());
     if (isCurrent && !isCurrent()) throw new SupersededError();
     await sleep(wait);
     if (isCurrent && !isCurrent()) throw new SupersededError();

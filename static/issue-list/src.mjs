@@ -236,7 +236,8 @@ async function display(context) {
     const pageJira = trackBadRequest(requestJira);
     try {
       const query = sort ? orderedJql(active.shownJql, sort.field, sort.direction) : active.shownJql;
-      const page = await searchIssuePage(pageJira.requestJira, query, fields, nextPageToken, 50);
+      const page = await searchIssuePage(pageJira.requestJira, query, fields, nextPageToken, 50,
+        { isCurrent: () => current === generation });
       if (current !== generation) return;
       appendIssues(page.issues);
       loaded += page.issues.length;

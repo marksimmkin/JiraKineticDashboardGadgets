@@ -83,7 +83,7 @@ async function main() {
       note.show(hiddenNote(active.visibility, { includeUnlistedDoneClause: true }));
       let state = initialCount();
       render(state, jql);
-      void approximateCount(requestJira, jql).then(result => {
+      void approximateCount(requestJira, jql, { isCurrent: () => current === generation }).then(result => {
         if (current !== generation) return;
         const next = withApproximate(state, result);
         if (next === state) return;
