@@ -8,12 +8,13 @@ function node(tag, className, text) {
 }
 
 // The "Hours per working day" Edit view shared by Capacity, User List and User Leaderboard.
-// `submit` is view.submit; it saves `{ ...keep, hoursPerDay }` as the gadget configuration.
-export function showHoursEditForm(root, { submit, idPrefix, className, heading, help, value, keep = {} }) {
+// The form always has the `hours-edit` class; `className` adds another. `submit` is view.submit;
+// it saves `{ ...keep, hoursPerDay }` as the gadget configuration.
+export function showHoursEditForm(root, { submit, idPrefix, className = '', heading, help, value, keep = {} }) {
   const inputId = `${idPrefix}-hours`;
   const helpId = `${inputId}-help`;
   const errorId = `${inputId}-error`;
-  const form = node('form', `panel ${className}`);
+  const form = node('form', className ? `panel hours-edit ${className}` : 'panel hours-edit');
   form.noValidate = true; // our own error message replaces the browser's validation bubble
   const title = node('h2', 'config-heading', heading);
   const label = node('label', 'field-label', 'Hours per working day');

@@ -31,7 +31,6 @@ async function main() {
       showHoursEditForm(root, {
         submit: payload => view.submit(payload),
         idPrefix: 'user-leaderboard',
-        className: 'hours-edit',
         heading: 'Leaderboard settings',
         help: 'Turns Remaining Estimate into days for Total time remaining. Applies to everyone. Default 7.',
         value: hours,
@@ -89,7 +88,7 @@ async function main() {
         track.setAttribute('aria-valuemax', String(maximum));
         track.setAttribute('aria-valuenow', String(metricValue(row, metric)));
         if (metric === 'time') {
-          track.setAttribute('aria-valuetext', `${timeRemainingSpoken(row.timeRemaining, hours)} remaining`);
+          track.setAttribute('aria-valuetext', timeRemainingSpoken(row.timeRemaining, hours));
         }
         track.append(fill);
         line.append(name, detail);

@@ -208,11 +208,11 @@ test('KDG-28 user-leaderboard: detail line, spoken value and meter aria-valuetex
   const sighted = detail.childNodes.filter(n => n !== spoken).map(n => n.textContent).join('');
   assert.equal(sighted, `5.3d${NBSP}(42h) remaining · 6 tickets`);
   const meter = row.find('leaderboard-track');
-  assert.equal(meter.getAttribute('aria-valuetext'), '5.3 days, 42 hours remaining');
+  assert.equal(meter.getAttribute('aria-valuetext'), '5.3 days, 42 hours');
   assert.equal(meter.getAttribute('aria-valuenow'), '151200', 'still seconds');
   assert.equal(meter.getAttribute('aria-valuemax'), '151200', 'still seconds');
   assert.equal(leaderRow(g, 'User u2').find('leaderboard-track').getAttribute('aria-valuetext'),
-    '0.1 days, 1 hour remaining');
+    '0.1 days, 1 hour');
 }));
 
 test('KDG-28 user-leaderboard: ranks by seconds and uses the default 7 hours per day', withTimers(async () => {
@@ -220,7 +220,7 @@ test('KDG-28 user-leaderboard: ranks by seconds and uses the default 7 hours per
   assert.deepEqual(g.findAll('leaderboard-name').map(n => n.textContent), ['User u3', 'User u1', 'User u4', 'User u2']);
   assert.equal(leaderRow(g, 'User u1').find('leaderboard-detail').children[0].textContent, shown('6.0d (42h)'));
   assert.equal(leaderRow(g, 'User u1').find('leaderboard-track').getAttribute('aria-valuetext'),
-    '6.0 days, 42 hours remaining');
+    '6.0 days, 42 hours');
 }));
 
 test('KDG-28 user-leaderboard: other metrics have no aria-valuetext and keep their detail text',
@@ -250,6 +250,7 @@ for (const [name, heading] of [['user-list', 'User list settings'], ['user-leade
   test(`KDG-28 ${name} edit: form, prefill 7 and attributes`, withTimers(async () => {
     const { g, form, input, error, save } = await editView();
     assert.ok(form.classList.contains('panel'));
+    assert.ok(form.classList.contains('hours-edit'));
     assert.equal(form.noValidate, true);
     assert.equal(g.find('config-heading').textContent, heading);
     const label = g.root.querySelector('label');
@@ -306,3 +307,15 @@ for (const [name, heading] of [['user-list', 'User list settings'], ['user-leade
     assert.deepEqual(g.submitted, [{ hoursPerDay: 8, other: 'keep me' }]);
   }));
 }
+
+test('KDG-28 capacity edit: shared form adds hours-edit but keeps its ids, copy and default 8', withTimers(async () => {
+  const g = await startGadget('capacity', { entryPoint: 'edit' });
+  const form = g.root.querySelector('form');
+  assert.ok(form.classList.contains('hours-edit'));
+  assert.ok(form.classList.contains('capacity-edit'));
+  assert.equal(g.root.querySelector('input').id, 'capacity-hours');
+  assert.equal(g.root.querySelector('input').value, '8');
+  assert.equal(g.root.querySelector('#capacity-hours-help').textContent,
+    'Turns Remaining Estimate into days. Applies to everyone. Default 8.');
+  assert.equal(g.find('config-heading').textContent, 'Capacity settings');
+}));

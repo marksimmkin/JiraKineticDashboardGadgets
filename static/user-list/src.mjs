@@ -32,7 +32,6 @@ async function main() {
       showHoursEditForm(root, {
         submit: payload => view.submit(payload),
         idPrefix: 'user-list',
-        className: 'hours-edit',
         heading: 'User list settings',
         help: 'Turns Remaining Estimate into days for Total time remaining. Applies to everyone. Default 7.',
         value: hours,

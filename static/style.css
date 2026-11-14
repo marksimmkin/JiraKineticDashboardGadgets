@@ -157,7 +157,7 @@ textarea.text-input { resize: vertical; min-height: 62px; }
 /* No estimates: mirrors the neutral .issue-status-lozenge.is-new box. */
 .issue-status-lozenge.capacity-lozenge.is-none { background: var(--ds-background-neutral, #dfe1e6); color: var(--ds-text, #172b4d); }
 .capacity-part { white-space: nowrap; }
-.capacity-edit .text-input, .hours-edit .text-input { max-width: 120px; }
+.hours-edit .text-input { max-width: 120px; }
 .capacity-over-days { color: var(--ds-text-danger, #ae2a19); font-weight: 650; }
 .capacity-legend { margin: 14px 0 0; }
 .issue-count-link { border: 0; padding: 0; background: transparent; color: var(--ds-link, #0c66e4); cursor: pointer; font: inherit; font-weight: inherit; text-align: inherit; text-decoration: underline; text-underline-offset: 2px; vertical-align: baseline; }
