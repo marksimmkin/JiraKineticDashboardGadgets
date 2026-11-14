@@ -122,7 +122,7 @@ for (const [what, response] of [['a failed response', fail(500)], ['a non-array 
     }));
 }
 
-test('KDG-18 issue-list: a sorted 400 clears the sort, makes the heading plain and reloads in filter order with a note',
+test('KDG-18 issue-list: a sorted 400 clears the sort and reloads in filter order; a successful reload makes the heading plain and shows a note',
   withTimers(async () => {
     const { g } = await start({ catalogue: fail(500) });
     await selectAndLoad(g);
@@ -134,18 +134,19 @@ test('KDG-18 issue-list: a sorted 400 clears the sort, makes the heading plain a
     assert.match(sorted.body.jql, / ORDER BY description ASC$/);
     sorted.resolve(fail(400));
     await flush();
-    assertPlain(g, 'Description');
-    for (const label of ['Issue key', 'Summary', 'Status']) {
-      assert.equal(heading(g, label).getAttribute('aria-sort'), 'none');
+    for (const label of ['Issue key', 'Summary', 'Description', 'Status']) {
+      assert.equal(heading(g, label).getAttribute('aria-sort'), 'none', `${label}: sort cleared`);
       assert.ok(!button(g, label).textContent.match(/[↑↓]/), 'no arrow anywhere');
     }
     const [reload] = searches(g);
     assert.equal(reload.body.jql, '(project = A) AND (statusCategory != Done)', 'the filter\'s own order');
     assert.equal(reload.body.nextPageToken, undefined, 'from page 1');
-    assert.equal(sortNote(g).hidden, false);
-    assert.equal(sortNote(g).textContent, NOTE);
+    assert.equal(sortNote(g).hidden, true, 'no note until the reload shows the column was the cause');
     reload.resolve(ok({ issues: makeIssues('R', 2), isLast: true }));
     await flush();
+    assertPlain(g, 'Description');
+    for (const label of ['Issue key', 'Summary', 'Status']) assertSortable(g, label);
+    assert.equal(sortNote(g).hidden, false);
     assert.deepEqual(rows(g), ['R-1', 'R-2']);
     assert.equal(g.find('status').textContent, '2 issues loaded here · click count for the full Jira list');
     assert.equal(sortNote(g).textContent, NOTE, 'note kept once the reload succeeds');
@@ -179,11 +180,13 @@ test('KDG-18 issue-list: a 400 on a sorted Load more also falls back from page 1
   assert.equal(more.body.nextPageToken, 'p2');
   more.resolve(fail(400));
   await flush();
-  assertPlain(g, 'Description');
   const [reload] = searches(g);
   assert.equal(reload.body.nextPageToken, undefined);
   assert.ok(!reload.body.jql.includes('ORDER BY'));
   assert.deepEqual(rows(g), [], 'sorted rows cleared');
+  reload.resolve(ok({ issues: makeIssues('R', 1), isLast: true }));
+  await flush();
+  assertPlain(g, 'Description');
   assert.equal(sortNote(g).textContent, NOTE);
 }));
 
@@ -218,6 +221,8 @@ test('KDG-18 issue-list: the note is cleared when the Controller sends a new fil
   await flush();
   searches(g)[0].resolve(fail(400));
   await flush();
+  searches(g)[0].resolve(ok({ issues: makeIssues('R', 1), isLast: true }));
+  await flush();
   assert.equal(sortNote(g).hidden, false);
   await g.bus.send(FILTER_SELECTED, selection({ name: 'Filter B', jql: 'project = B', revision: 'r2' }));
   await flush();
@@ -239,7 +244,65 @@ test('KDG-18 issue-list: an unsorted reload that also fails shows the normal err
     assert.equal(sortNote(g).hidden, true);
     assert.equal(sortNote(g).textContent, '');
     assert.equal(searches(g).length, 0, 'no retry loop');
+    assertSortable(g, 'Description'); // a JQL problem, not the column
+    assert.equal(heading(g, 'Description').getAttribute('aria-sort'), 'none', 'the sort stays cleared');
+    // Once the JQL is fixed the next load succeeds unsorted and does not blame the column.
+    await g.bus.send(GADGET_REFRESH, { origin: 'dashboard' });
+    await flush();
+    const [next] = searches(g);
+    assert.ok(!next.body.jql.includes('ORDER BY'));
+    next.resolve(ok({ issues: makeIssues('R', 1), isLast: true }));
+    await flush();
+    assertSortable(g, 'Description');
+    assert.equal(sortNote(g).hidden, true);
   }));
+
+test('KDG-18 issue-list: a sort click while the fallback reload is pending drops the fallback',
+  withTimers(async () => {
+    const { g } = await start({ catalogue: fail(500) });
+    await selectAndLoad(g);
+    button(g, 'Description').click();
+    await flush();
+    searches(g)[0].resolve(fail(400));
+    await flush();
+    const [stale] = searches(g);
+    button(g, 'Summary').click();
+    await flush();
+    stale.resolve(ok({ issues: makeIssues('X', 1), isLast: true }));
+    const sorted = searches(g).find(r => r !== stale);
+    sorted.resolve(ok({ issues: makeIssues('S', 1), isLast: true }));
+    await flush();
+    assertSortable(g, 'Description');
+    assert.equal(sortNote(g).hidden, true);
+    assert.deepEqual(rows(g), ['S-1']);
+  }));
+
+test('KDG-18 issue-list: the catalogue request is retried when Jira rate limits it', withTimers(async () => {
+  const { g, field } = await start();
+  field.resolve({ ok: false, status: 429, headers: { 'Retry-After': '1' }, json: async () => ({}) });
+  await flush();
+  mock.timers.tick(2000);
+  await flush();
+  const [retry] = g.pending(FIELD_CATALOGUE);
+  assert.ok(retry, 'asked again after the wait');
+  retry.resolve(ok(CATALOGUE));
+  await flush();
+  assertPlain(g, 'Description');
+}));
+
+test('KDG-18 issue-list: a catalogue that stays rate limited leaves every heading sortable', withTimers(async () => {
+  const { g } = await start();
+  for (let i = 0; i < 4; i += 1) {
+    g.pending(FIELD_CATALOGUE)[0].resolve({ ok: false, status: 429, headers: { 'Retry-After': '1' },
+      json: async () => ({}) });
+    await flush();
+    mock.timers.tick(20000);
+    await flush();
+  }
+  assert.equal(g.pending(FIELD_CATALOGUE).length, 0, 'gave up');
+  assert.equal(g.findAll('table-sort-button').length, 4);
+  assert.ok(!g.root.textContent.includes('Jira is busy'), 'no busy message shown');
+}));
 
 test('KDG-18 issue-list: a sorted failure that is not a 400 keeps its own message and the sort',
   withTimers(async () => {
@@ -264,6 +327,8 @@ test('KDG-18 issue-list: focus moves to the first sortable heading when the focu
     await flush();
     searches(g)[0].resolve(fail(400));
     await flush();
+    searches(g)[0].resolve(ok({ issues: makeIssues('R', 1), isLast: true }));
+    await flush();
     assert.equal(g.doc.activeElement, button(g, 'Issue key'));
   }));
 
@@ -278,6 +343,9 @@ test('KDG-18 issue-list: focus moves to the table when no sortable heading is le
   description.click();
   await flush();
   searches(g)[0].resolve(fail(400));
+  await flush();
+  assert.equal(g.doc.activeElement, description, 'focus stays while the reload runs');
+  searches(g)[0].resolve(ok({ issues: makeIssues('R', 1), isLast: true }));
   await flush();
   const table = g.root.querySelector('table');
   assert.equal(g.doc.activeElement, table);

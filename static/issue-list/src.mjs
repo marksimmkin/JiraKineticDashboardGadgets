@@ -149,7 +149,7 @@ async function display(context) {
     button.type = 'button';
     button.addEventListener('click', () => {
       sort = { field: column, direction: sort?.field === column && sort.direction === 'ASC' ? 'DESC' : 'ASC' };
-      showSortNote('');
+      clearSortNote();
       updateSortHeadings();
       refresh();
     });
@@ -180,6 +180,9 @@ async function display(context) {
   let loaded = 0;
   let loading = false;
   let sort = null;
+  // KDG-18: the column of a sorted search Jira rejected (400), until the unsorted reload shows
+  // whether the column was the cause (reload succeeds) or the JQL was (reload fails too).
+  let rejectedSort = null;
   const visited = new Set();
   const fields = columns.filter(column => column !== 'key');
 
@@ -196,6 +199,13 @@ async function display(context) {
   function showSortNote(text) {
     sortNote.textContent = text;
     sortNote.hidden = !text;
+  }
+
+  // A sort click or a new Controller filter clears the note and any fallback still waiting
+  // for its unsorted reload.
+  function clearSortNote() {
+    rejectedSort = null;
+    showSortNote('');
   }
 
   // KDG-18: a heading Jira can't sort by becomes a plain column header for the rest of the session.
@@ -223,7 +233,8 @@ async function display(context) {
   // rejected sort is handled by the fallback in loadPage.
   async function loadSortableFields() {
     try {
-      const response = await requestJira('/rest/api/3/field', { headers: { Accept: 'application/json' } });
+      const response = await requestJiraWithRetry(requestJira, '/rest/api/3/field',
+        { headers: { Accept: 'application/json' } });
       if (!response?.ok) return;
       const available = await response.json();
       if (!Array.isArray(available)) return;
@@ -286,6 +297,12 @@ async function display(context) {
       const page = await searchIssuePage(pageJira.requestJira, query, fields, nextPageToken, 50,
         { isCurrent: () => current === generation });
       if (current !== generation) return;
+      if (rejectedSort && !usedSort) {
+        // The search works without the sort, so the column was the cause.
+        makeUnsortable(rejectedSort);
+        showSortNote(`Jira couldn't sort by ${labels.get(rejectedSort) ?? rejectedSort}, so issues are in the filter's order.`);
+        rejectedSort = null;
+      }
       appendIssues(page.issues);
       loaded += page.issues.length;
       if (page.isLast === true) nextPageToken = undefined;
@@ -304,17 +321,17 @@ async function display(context) {
     } catch (error) {
       if (current !== generation) return;
       if (usedSort && pageJira.badRequest) {
-        // KDG-18: Jira rejected the sorted search, most likely because it can't sort by that
-        // field. Drop the sort, make the heading plain and reload in the filter's own order.
-        // If that reload fails too, it is a JQL problem and gets the normal error below.
+        // KDG-18: Jira rejected the sorted search, maybe because it can't sort by that field.
+        // Drop the sort (so later loads don't repeat the failure) and reload in the filter's
+        // own order. The heading turns plain and the note shows only if that reload succeeds;
+        // if it fails too, it is a JQL problem and gets the normal error below.
         sort = null;
-        makeUnsortable(usedSort.field);
+        rejectedSort = usedSort.field;
         updateSortHeadings();
-        showSortNote(`Jira couldn't sort by ${labels.get(usedSort.field) ?? usedSort.field}, so issues are in the filter's order.`);
         refresh();
         return;
       }
-      if (!usedSort && !loaded) showSortNote('');
+      if (!usedSort && !loaded) clearSortNote();
       const shown = usedSort ? error : statusNameError(error, pageJira, active.visibility);
       message.textContent = shown.message || 'Could not load the issue list.';
     } finally {
@@ -352,7 +369,7 @@ async function display(context) {
     active = { name: payload.name, jql: payload.jql, visibility,
       shownJql: payload.jql ? visibilityJql(payload.jql, visibility) : payload.jql };
     filterName.textContent = active.name ?? '';
-    showSortNote('');
+    clearSortNote();
     refresh();
   });
   await events.on(GADGET_REFRESH, payload => {
