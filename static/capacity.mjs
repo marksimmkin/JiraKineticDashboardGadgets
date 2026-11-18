@@ -68,7 +68,8 @@ function displayPercent(allocation, state) {
 }
 
 // `summary` is summarizeAssignees() output. With daysLeft 0 (range ended, or only weekend days
-// left) every row is 'none': work is listed without a judgement.
+// left) there is no capacity: any work is 'over' by all of it (allocation and percent stay null),
+// 0.0 days is 'normal' with 0 spare, and Unassigned stays 'none'.
 export function capacityRows(summary, { hoursPerDay: hours = DEFAULT_HOURS_PER_DAY, daysLeft = 0 } = {}) {
   const perDay = validHours(hours) ? hours : DEFAULT_HOURS_PER_DAY;
   const judged = Number.isFinite(daysLeft) && daysLeft > 0;
@@ -79,7 +80,18 @@ export function capacityRows(summary, { hoursPerDay: hours = DEFAULT_HOURS_PER_D
     const withoutEstimate = total - (source.estimatedIssues ?? 0);
     const row = { id: source.id, name: source.name, unassigned, workDays, total, withoutEstimate,
       allocation: null, percent: null, state: 'none', spareDays: null, overDays: null };
-    if (unassigned || !judged) return row;
+    if (unassigned) return row;
+    if (!judged) {
+      if (total > 0 && withoutEstimate === total) row.state = 'no-estimates';
+      else if (workDays > 0) {
+        row.state = 'over';
+        row.overDays = workDays;
+      } else {
+        row.state = 'normal';
+        row.spareDays = 0;
+      }
+      return row;
+    }
     row.allocation = workDays / daysLeft * 100;
     if (total > 0 && withoutEstimate === total) {
       row.state = 'no-estimates';

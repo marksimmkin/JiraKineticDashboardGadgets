@@ -218,23 +218,99 @@ test('KDG-22 capacity: range line for no Start Date, one day left, not started a
   g = await show([issue('s', 12), issue('a', 1), issue(null, 2)], { endDate: '2026-05-29' });
   assert.equal(g.find('capacity-range').textContent, '1\u00a0Jan\u00a02026 – 29\u00a0May\u00a02026 · Ended · 0 working days left');
   assert.deepEqual(rowsOf(g).map(row => row.querySelector('span.leaderboard-detail').textContent),
-    ['12.0 days of work', '1.0 day of work', '2.0 days of work']);
-  assert.deepEqual(rowsOf(g).map(meta), ['1 issue', '1 issue', '1 issue']);
-  assert.equal(g.findAll('capacity-track').length, 0, 'no bars');
-  assert.equal(g.findAll('capacity-lozenge').length, 0, 'no labels');
-  assert.equal(g.find('capacity-legend').textContent, 'A day is 8 hours.');
+    ['12.0 of 0 days', '1.0 of 0 days', '2.0 days of work']);
+  assert.deepEqual(rowsOf(g).map(meta),
+    ['Overallocated 12.0 days over · 1 issue', 'Overallocated 1.0 day over · 1 issue', '1 issue']);
+  assert.equal(g.findAll('capacity-track').length, 2, 'bars for people, none for Unassigned');
+  assert.equal(g.findAll('capacity-marker').length, 0, 'no 100% marker');
+  assert.equal(g.find('capacity-legend').textContent,
+    'No working days left, so all remaining work is over capacity. A day is 8 hours.');
 }));
 
-test('KDG-22 capacity: only weekend days left lists work without a judgement',
+// ---- KDG-33: no working days left ----
+
+// Sam 2 days (over), Alex 5 days (over), Jo 0.0 with an estimate, Nia no estimates, Unassigned 3.
+const NO_DAYS_ISSUES = [issue('s', 2), issue('a', 5), issue('j', 0), issue('n', null), issue(null, 3)];
+
+function assertAllOver(g) {
+  assert.deepEqual(rowsOf(g).map(row => text(row, 'leaderboard-name')),
+    ['Alex Smith', 'Sam Lee', 'Jo Park', 'Nia Bell', 'Unassigned'], 'work days high first, Unassigned last');
+  assert.deepEqual(rowsOf(g).map(row => row.querySelector('span.leaderboard-detail').textContent),
+    ['5.0 of 0 days', '2.0 of 0 days', '0.0 of 0 days', '0.0 of 0 days', '3.0 days of work']);
+  assert.deepEqual(rowsOf(g).map(meta), [
+    'Overallocated 5.0 days over · 1 issue',
+    'Overallocated 2.0 days over · 1 issue',
+    '0.0 days spare · 1 issue',
+    'No estimates 1 issue · 1 without estimate',
+    '1 issue',
+  ]);
+  assert.equal(g.findAll('capacity-marker').length, 0, 'no 100% marker');
+
+  const alex = rowNamed(g, 'Alex Smith');
+  const alexTrack = alex.find('capacity-track');
+  assert.ok(alex.find('capacity-lozenge').classList.contains('is-over'));
+  assert.equal(text(alex, 'capacity-over-days'), '5.0 days over');
+  assert.ok(alex.find('capacity-fill').classList.contains('is-over'));
+  assert.equal(alex.find('capacity-fill').style.width, '100%');
+  assert.ok(alexTrack.classList.contains('is-capped'), 'square right end');
+  assert.equal(alexTrack.getAttribute('role'), 'meter');
+  assert.equal(alexTrack.getAttribute('aria-label'), 'Alex Smith capacity');
+  assert.equal(alexTrack.getAttribute('aria-valuemin'), '0');
+  assert.equal(alexTrack.getAttribute('aria-valuemax'), '1');
+  assert.equal(alexTrack.getAttribute('aria-valuenow'), '1');
+  assert.equal(alexTrack.getAttribute('aria-valuetext'), '5.0 of 0 working days, overallocated by 5.0 days');
+
+  const jo = rowNamed(g, 'Jo Park');
+  const joTrack = jo.find('capacity-track');
+  assert.equal(jo.find('capacity-lozenge'), null);
+  assert.ok(jo.find('capacity-fill').classList.contains('is-normal'));
+  assert.equal(jo.find('capacity-fill').style.width, '0%', 'empty track');
+  assert.equal(joTrack.classList.contains('is-capped'), false);
+  assert.equal(joTrack.getAttribute('aria-valuemax'), '1');
+  assert.equal(joTrack.getAttribute('aria-valuenow'), '0');
+  assert.equal(joTrack.getAttribute('aria-valuetext'), '0.0 of 0 working days');
+
+  const nia = rowNamed(g, 'Nia Bell');
+  assert.ok(nia.find('capacity-lozenge').classList.contains('is-none'));
+  assert.equal(nia.find('capacity-fill').style.width, '0%');
+  assert.equal(nia.find('capacity-track').getAttribute('aria-valuenow'), '0');
+  assert.equal(nia.find('capacity-track').getAttribute('aria-valuetext'),
+    'No remaining estimates, 1 issue without estimate');
+
+  const unassigned = rowNamed(g, 'Unassigned');
+  assert.equal(unassigned.find('capacity-track'), null, 'no bar for Unassigned');
+  assert.equal(unassigned.find('capacity-lozenge'), null);
+
+  assert.equal(g.find('capacity-legend').textContent,
+    'No working days left, so all remaining work is over capacity. A day is 8 hours.');
+}
+
+test('KDG-33 capacity: ended range shows all remaining work as over capacity', withTimers(async () => {
+  const g = await show(NO_DAYS_ISSUES, { endDate: '2026-05-29' });
+  assert.equal(g.find('capacity-range').textContent, '1\u00a0Jan\u00a02026 – 29\u00a0May\u00a02026 · Ended · 0 working days left');
+  assertAllOver(g);
+}));
+
+test('KDG-33 capacity: only weekend days left shows all remaining work as over capacity',
   withTimers(async () => {
-    const g = await show([issue('s', 2), issue('a', 5)], { endDate: '2026-06-07' });
+    const g = await show(NO_DAYS_ISSUES, { endDate: '2026-06-07' });
     assert.equal(g.find('capacity-range').textContent, '1\u00a0Jan\u00a02026 – 7\u00a0Jun\u00a02026 · 0 working days left');
-    assert.deepEqual(rowsOf(g).map(row => row.querySelector('span.leaderboard-detail').textContent),
-      ['5.0 days of work', '2.0 days of work'], 'most work first');
-    assert.equal(g.findAll('capacity-track').length, 0);
-    assert.equal(g.findAll('capacity-lozenge').length, 0);
-    assert.equal(g.find('capacity-legend').textContent, 'A day is 8 hours.');
+    assertAllOver(g);
   }, '2026-06-06T12:00:00Z'));
+
+test('KDG-33 capacity: one day over is singular and the legend keeps the hours phrasing', withTimers(async () => {
+  const g = await show([issue('s', 1)], { endDate: '2026-05-29' });
+  assert.equal(meta(rowNamed(g, 'Sam Lee')), 'Overallocated 1.0 day over · 1 issue');
+  assert.equal(rowNamed(g, 'Sam Lee').find('capacity-track').getAttribute('aria-valuetext'),
+    '1.0 of 0 working days, overallocated by 1.0 day');
+}));
+
+test('KDG-33 capacity: with only Unassigned work and no days left there is no bar or no-days legend',
+  withTimers(async () => {
+    const g = await show([issue(null, 3)], { endDate: '2026-05-29' });
+    assert.equal(g.findAll('capacity-track').length, 0);
+    assert.equal(g.find('capacity-legend').textContent, 'A day is 8 hours.');
+  }));
 
 // ---- States ----
 
