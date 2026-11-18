@@ -4,6 +4,21 @@ export const GADGET_REFRESH = 'JIRA_DASHBOARD_GADGET_REFRESH';
 export const STATUS_COLORS = ['#0c66e4', '#7f5fcb', '#22a06b', '#e2b203', '#e2483d', '#42b2d7',
   '#b65c9c', '#f38a3f', '#6b778c', '#9f8fef', '#80b655', '#d96c77'];
 
+// KDG-31: one "Hours per working day" setting, saved in the Controller, for Capacity, User List
+// and User Leaderboard.
+export const DEFAULT_HOURS_PER_DAY = 7;
+
+export function validHoursPerDay(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 1 && value <= 24;
+}
+
+// `config` is a gadget configuration or a FILTER_SELECTED payload; a missing or invalid
+// `hoursPerDay` (for example from an older Controller) means `fallback`.
+export function hoursPerDay(config, fallback = DEFAULT_HOURS_PER_DAY) {
+  const value = config?.hoursPerDay;
+  return validHoursPerDay(value) ? value : fallback;
+}
+
 export function validStatusColor(color) {
   return typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color);
 }
@@ -122,6 +137,7 @@ export function selectedFilterPayload(context, filter) {
     statuses,
     hiddenStatuses: statuses.filter(status => status.show === false).map(status => status.name),
     shownStatuses: statuses.filter(status => status.show === true).map(status => status.name),
+    hoursPerDay: hoursPerDay(context?.extension?.gadgetConfiguration),
   };
 }
 
@@ -132,7 +148,7 @@ export function selectionKey(payload) {
   if (revision === null || revision === undefined) return null;
   return JSON.stringify([revision, payload.jql ?? null, payload.startDate ?? null,
     payload.endDate ?? null, payload.statuses ?? [], payload.hiddenStatuses ?? [],
-    payload.shownStatuses ?? []]);
+    payload.shownStatuses ?? [], hoursPerDay(payload)]);
 }
 
 export const REFRESH_FALLBACK_MS = 3000;

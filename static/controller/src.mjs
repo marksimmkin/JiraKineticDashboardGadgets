@@ -1,7 +1,9 @@
 import { events, requestJira, view } from '@forge/bridge';
 import { requestJiraWithRetry } from '../jira-request.mjs';
+import { createHoursField } from '../hours-edit.mjs';
 import { configuredFilters, configuredStatuses, dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
-  GADGET_REFRESH, isForDashboard, selectedFilterPayload, STATUS_COLORS, statusKey, validateFilters, validateStatuses } from '../shared.mjs';
+  GADGET_REFRESH, hoursPerDay, isForDashboard, selectedFilterPayload, STATUS_COLORS, statusKey, validateFilters,
+  validateStatuses } from '../shared.mjs';
 
 const root = document.getElementById('app');
 
@@ -59,6 +61,15 @@ async function edit(context) {
   const statusHelp = element('p', 'muted', 'Choose Jira statuses or enter a missing status name exactly as a gadget shows it. Statuses with the same name are counted together. Untick Show to hide a status from the counter, list, charts, and user gadgets for everyone. Done statuses start unticked, and Done statuses not listed here are also hidden. The charts and user gadgets show only statuses listed here. Weights are used by the progress, burndown, and leaderboard gadgets. Colours are used by the pie chart. The progress and burndown gadgets always include every status.');
   const statusRows = element('div', 'status-list');
   const statusWarning = element('p', 'muted', statusLoadError);
+  // KDG-31: one hours-per-day setting for Capacity, User List and User Leaderboard.
+  const savedConfig = context.extension?.gadgetConfiguration;
+  const hours = createHoursField({
+    idPrefix: 'controller',
+    heading: 'Working day',
+    help: 'Turns Remaining Estimate into days in the Capacity, User List and User Leaderboard gadgets. ' +
+      'Applies to everyone. Default 7.',
+    value: hoursPerDay(savedConfig),
+  });
   const error = element('p', 'error');
   error.setAttribute('role', 'alert');
   const add = element('button', 'button secondary', 'Add filter');
@@ -70,12 +81,12 @@ async function edit(context) {
   addMissingStatus.type = 'button';
   const statusActions = element('div', 'status-actions');
   statusActions.append(addStatus, addMissingStatus);
-  const save = element('button', 'button primary', 'Save filters and statuses');
+  const save = element('button', 'button primary', 'Save settings');
   save.type = 'submit';
   const actions = element('div', 'actions');
   actions.append(save);
   form.append(intro, filtersHeading, rows, add, statusesHeading, statusHelp,
-    statusRows, statusActions, statusWarning, error, actions);
+    statusRows, statusActions, statusWarning, hours.element, error, actions);
   root.replaceChildren(form);
 
   function orderButtons(row, container, label) {
@@ -259,12 +270,15 @@ async function edit(context) {
       return entry;
     });
     error.textContent = validateFilters(next) || validateStatuses(nextStatuses);
-    if (error.textContent) return;
+    const nextHours = hours.read({ focus: !error.textContent });
+    if (error.textContent || nextHours === null) return;
     save.disabled = true;
+    // Other saved keys are kept.
+    const keep = savedConfig && typeof savedConfig === 'object' && !Array.isArray(savedConfig) ? savedConfig : {};
     try {
-      await view.submit({ filters: next, statuses: nextStatuses });
+      await view.submit({ ...keep, filters: next, statuses: nextStatuses, hoursPerDay: nextHours });
     } catch {
-      error.textContent = 'Could not save the filters. Please try again.';
+      error.textContent = 'Could not save the settings. Please try again.';
       save.disabled = false;
     }
   });

@@ -22,8 +22,9 @@ const STATUSES = [
   { name: 'Done', weight: 0, color: '#22a06b' },
 ];
 // 1 Jun to 12 Jun 2026 has 10 working days left on 1 Jun.
+// KDG-31: hours per day comes from the Controller's payload; these tests use 8.
 const PAYLOAD = { statuses: STATUSES, hiddenStatuses: ['Closed'], shownStatuses: ['To Do'],
-  startDate: '2026-01-01', endDate: '2026-06-12' };
+  startDate: '2026-01-01', endDate: '2026-06-12', hoursPerDay: 8 };
 
 const CATEGORY = { 'To Do': ['1', 'new'], 'In Progress': ['3', 'indeterminate'], Closed: ['5', 'done'],
   'In QA': ['7', 'indeterminate'] };
@@ -190,14 +191,20 @@ test('KDG-22 capacity: not narrowed, the footer leaves out "in shown statuses"',
   assert.equal(g.find('status-hidden-note').textContent, 'Hiding: Closed');
 }));
 
-test('KDG-22 capacity: hours per day from the configuration', withTimers(async () => {
-  const g = await show([issue('s', 5)], {}, { configuration: { hoursPerDay: 4 } });
+test('KDG-31 capacity: hours per day from the Controller payload', withTimers(async () => {
+  const g = await show([issue('s', 5)], { hoursPerDay: 4 });
   // 40 hours at 4 hours a day is 10 days.
   assert.equal(rowNamed(g, 'Sam Lee').querySelector('span.leaderboard-detail').textContent, '10.0 of 10 days · 100%');
   assert.equal(meta(rowNamed(g, 'Sam Lee')), '0.0 days spare · 1 issue', 'exactly 100% is normal');
   assert.equal(g.find('capacity-legend').textContent, 'The line marks full capacity. A day is 4 hours.');
-  const odd = await show([issue('s', 1)], {}, { configuration: { hoursPerDay: 'x' } });
-  assert.equal(odd.find('capacity-legend').textContent, 'The line marks full capacity. A day is 8 hours.');
+  const odd = await show([issue('s', 1)], { hoursPerDay: 'x' });
+  assert.equal(odd.find('capacity-legend').textContent, 'The line marks full capacity. A day is 7 hours.');
+  const older = await show([issue('s', 1)], { hoursPerDay: undefined });
+  assert.equal(older.find('capacity-legend').textContent, 'The line marks full capacity. A day is 7 hours.',
+    'an older Controller payload without hoursPerDay means 7');
+  const saved = await show([issue('s', 1)], { hoursPerDay: undefined }, { configuration: { hoursPerDay: 4 } });
+  assert.equal(saved.find('capacity-legend').textContent, 'The line marks full capacity. A day is 7 hours.',
+    "the gadget's own old saved setting is no longer read");
 }));
 
 // ---- Range copy ----
@@ -384,70 +391,8 @@ test('KDG-22 capacity: a failed search shows its message or the fallback', withT
   assert.equal(g.find('status').textContent, 'Could not load capacity.');
 }));
 
-// ---- Edit view ----
-
-async function editView(configuration) {
-  const g = await startGadget('capacity', { entryPoint: 'edit', configuration });
-  const form = g.root.querySelector('form');
-  const input = g.root.querySelector('input');
-  const submit = async value => {
-    input.value = value;
-    form.dispatchEvent({ type: 'submit', preventDefault() {} });
-    await flush();
-  };
-  return { g, form, input, submit, error: g.find('error'), save: g.root.querySelector('button') };
-}
-
-test('KDG-22 capacity edit: form, prefill and attributes', withTimers(async () => {
-  const { g, form, input, error, save } = await editView();
-  assert.ok(form.classList.contains('panel'));
-  assert.equal(g.find('config-heading').textContent, 'Capacity settings');
-  const label = g.root.querySelector('label');
-  assert.ok(label.textContent.startsWith('Hours per working day'));
-  assert.equal(input.parentNode, label, 'a real label');
-  assert.equal(input.value, '8');
-  assert.equal(input.type, 'text');
-  assert.equal(input.getAttribute('inputmode'), 'decimal');
-  const help = g.root.querySelector('#capacity-hours-help');
-  assert.equal(help.textContent, 'Turns Remaining Estimate into days. Applies to everyone. Default 8.');
-  assert.equal(input.getAttribute('aria-describedby'), 'capacity-hours-help');
-  assert.equal(error.getAttribute('role'), 'alert');
-  assert.equal(save.textContent, 'Save settings');
-  assert.equal(g.requests.length, 0);
-  assert.equal(g.emitted('kinetic.dashboard.filter.request').length, 0, 'Edit view does not ask the Controller');
-  assert.equal((await editView({ hoursPerDay: 7.5 })).input.value, '7.5');
-}));
-
-test('KDG-22 capacity edit: invalid hours show the error and are not saved', withTimers(async () => {
-  const { g, input, submit, error } = await editView();
-  for (const value of ['', '0', '25', 'abc']) {
-    g.doc.activeElement = null;
-    await submit(value);
-    assert.equal(error.textContent, 'Enter hours from 1 to 24, for example 7.5.', `"${value}"`);
-    assert.equal(input.getAttribute('aria-invalid'), 'true');
-    assert.equal(g.doc.activeElement, input, 'focus moves to the input');
-  }
-  assert.deepEqual(g.submitted, []);
-  await submit('7,5');
-  assert.deepEqual(g.submitted, [{ hoursPerDay: 7.5 }]);
-  assert.equal(error.textContent, '');
-  assert.equal(input.hasAttribute('aria-invalid'), false);
-}));
-
-test('KDG-22 capacity edit: Save is disabled while saving and a failure can be retried', withTimers(async () => {
-  const { g, submit, error, save } = await editView({ hoursPerDay: 6 });
-  let finish;
-  g.bridge.view.submit = () => new Promise((resolve, reject) => { finish = reject; });
-  await submit('6');
-  assert.equal(save.disabled, true, 'disabled while saving');
-  finish(new Error('nope'));
-  await flush();
-  assert.equal(error.textContent, 'Could not save the settings. Please try again.');
-  assert.equal(save.disabled, false);
-  g.bridge.view.submit = async payload => { g.submitted.push(payload); };
-  await submit(' 10 ');
-  assert.deepEqual(g.submitted, [{ hoursPerDay: 10 }]);
-}));
+// KDG-31: Capacity has no Edit view; hours per day is set in the Controller (see
+// kdg-31-hours-in-controller.test.mjs).
 
 // ---- Review round ----
 
@@ -481,15 +426,4 @@ test('KDG-22 capacity: a failure working out the dates shows "Could not load cap
   assert.equal(g.find('status').textContent, 'Could not load capacity.');
   assert.equal(g.find('capacity-range').hidden, true);
   assert.equal(searches(g), 0);
-}));
-
-test('KDG-22 capacity edit: typing clears the error', withTimers(async () => {
-  const { input, submit, error } = await editView();
-  await submit('0');
-  assert.equal(input.getAttribute('aria-invalid'), 'true');
-  input.value = '7';
-  input.dispatchEvent({ type: 'input' });
-  assert.equal(error.textContent, '');
-  assert.equal(input.hasAttribute('aria-invalid'), false);
-  assert.equal(input.getAttribute('aria-describedby'), 'capacity-hours-help');
 }));

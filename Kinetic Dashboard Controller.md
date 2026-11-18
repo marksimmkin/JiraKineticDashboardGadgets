@@ -10,6 +10,7 @@ A Jira dashboard widget that allows the user to edit the following information t
 		- Weight = Value between 0.0 - 1.0
 		- A Jira status chosen from the active-workflow list, or a manually entered missing status name copied from a gadget warning. Saved missing names remain editable if they no longer appear in Jira's list.
 		- Show = whether gadgets other than the progress and burndown gadgets include this status. Done-category statuses start unticked; unlisted Done-category statuses are also hidden. The chart and user gadgets also leave out statuses not listed here.
+	- Hours per working day = a number from 1 to 24 (default 7; "7,5" is accepted as 7.5). It turns Remaining Estimate into days in the Capacity, User List and User Leaderboard gadgets, applies to everyone, and is sent with each selection. A selection from an older Controller without it means 7. Changing it reloads those gadgets once.
 - When in View Mode:
 	- A dropdown showing the list of filter names were the user can select each one
 	- Once the drop down is changed, the other gadgets in the dashboard update based on the new JQL filter

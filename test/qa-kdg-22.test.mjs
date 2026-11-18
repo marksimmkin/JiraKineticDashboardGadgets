@@ -33,7 +33,7 @@ const searches = g => g.requests.filter(r => r.path.includes('search/jql')).leng
 async function show(issues, overrides = {}, options = {}) {
   const g = await startGadget('capacity', { jira: jiraWith(issues), ...options });
   await g.bus.send(FILTER_SELECTED, selection({ statuses: STATUSES, startDate: null, endDate: '2026-06-12',
-    ...overrides }));
+    hoursPerDay: 8, ...overrides }));
   await flush();
   return g;
 }
@@ -100,7 +100,7 @@ test('QA KDG-22: "today" follows the Jira timezone near midnight', withTimers(as
 
 test('QA KDG-22: zero Remaining Estimate is an estimate (Underallocated), not "No estimates"', () => {
   const summary = summarizeAssignees([issue('z', 'Zero', 0), issue('z', 'Zero', 0)], STATUSES);
-  const [row] = capacityRows(summary, { daysLeft: 10 }).rows;
+  const [row] = capacityRows(summary, { hoursPerDay: 8, daysLeft: 10 }).rows;
   assert.equal(row.state, 'under');
   assert.equal(row.withoutEstimate, 0);
   assert.equal(row.percent, 0);
@@ -108,7 +108,7 @@ test('QA KDG-22: zero Remaining Estimate is an estimate (Underallocated), not "N
 
 test('QA KDG-22: boundary rounding at 25%, 100% and just over', () => {
   const at = (seconds, daysLeft) => capacityRows({ rows: [{ id: 'x', name: 'X', total: 1, estimatedIssues: 1,
-    timeRemaining: seconds }] }, { daysLeft }).rows[0];
+    timeRemaining: seconds }] }, { hoursPerDay: 8, daysLeft }).rows[0];
   assert.equal(at(2.5 * DAY, 10).state, 'normal');
   assert.equal(at(2.5 * DAY, 10).percent, 25);
   assert.equal(at(2.44 * DAY, 10).state, 'under'); // rounds to 2.4
@@ -120,16 +120,16 @@ test('QA KDG-22: boundary rounding at 25%, 100% and just over', () => {
   assert.equal(at(24.9 * DAY, 100).percent, 24, 'never shows 25% next to Underallocated');
   // Huge allocations: percentage is real, scale is capped at 200.
   const huge = capacityRows({ rows: [{ id: 'x', name: 'X', total: 1, estimatedIssues: 1, timeRemaining: 100 * DAY }] },
-    { daysLeft: 1 });
+    { hoursPerDay: 8, daysLeft: 1 });
   assert.equal(huge.rows[0].percent, 10000);
   assert.equal(huge.scale, 200);
 });
 
 test('QA KDG-22: hours per day rejects invalid saved values', () => {
   for (const value of [0, 0.5, 25, -8, Number.NaN, Infinity, '8', null, undefined, true]) {
-    assert.equal(hoursPerDay({ hoursPerDay: value }), 8, String(value));
+    assert.equal(hoursPerDay({ hoursPerDay: value }), 7, String(value));
   }
-  assert.equal(hoursPerDay(undefined), 8);
+  assert.equal(hoursPerDay(undefined), 7, 'KDG-31: default 7');
   assert.equal(hoursPerDay({ hoursPerDay: 1 }), 1);
   assert.equal(hoursPerDay({ hoursPerDay: 24 }), 24);
   for (const text of ['1e1', '7,5,5', '7.5h', '-1', '.5', '0x10', '24.01', ' ', '8 8']) {

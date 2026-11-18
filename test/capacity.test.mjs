@@ -6,16 +6,16 @@ import { summarizeAssignees } from '../static/issue-data.mjs';
 
 const HOUR = 3600;
 
-test('hours per day uses a saved number from 1 to 24 and otherwise 8', () => {
-  assert.equal(DEFAULT_HOURS_PER_DAY, 8);
+test('hours per day uses a saved number from 1 to 24 and otherwise 7 (KDG-31)', () => {
+  assert.equal(DEFAULT_HOURS_PER_DAY, 7);
   assert.equal(hoursPerDay({ hoursPerDay: 7.5 }), 7.5);
   assert.equal(hoursPerDay({ hoursPerDay: 1 }), 1);
   assert.equal(hoursPerDay({ hoursPerDay: 24 }), 24);
   for (const bad of [undefined, null, 0, 0.5, 24.5, -3, NaN, Infinity, '7', true]) {
-    assert.equal(hoursPerDay({ hoursPerDay: bad }), 8, String(bad));
+    assert.equal(hoursPerDay({ hoursPerDay: bad }), 7, String(bad));
   }
-  assert.equal(hoursPerDay(undefined), 8);
-  assert.equal(hoursPerDay(null), 8);
+  assert.equal(hoursPerDay(undefined), 7);
+  assert.equal(hoursPerDay(null), 7);
 });
 
 test('hours input accepts dot or comma decimals within 1 to 24', () => {
@@ -142,8 +142,8 @@ test('capacity uses the configured hours per day', () => {
   const { rows } = capacityRows({ rows: [person('a', 'A', 15 * HOUR, 1)] }, { hoursPerDay: 7.5, daysLeft: 4 });
   assert.equal(rows[0].workDays, 2);
   assert.equal(rows[0].percent, 50);
-  const fallback = capacityRows({ rows: [person('a', 'A', 16 * HOUR, 1)] }, { hoursPerDay: 0, daysLeft: 4 });
-  assert.equal(fallback.rows[0].workDays, 2);
+  const fallback = capacityRows({ rows: [person('a', 'A', 14 * HOUR, 1)] }, { hoursPerDay: 0, daysLeft: 4 });
+  assert.equal(fallback.rows[0].workDays, 2, 'invalid hours fall back to 7');
 });
 
 test('a person with no estimated issues is no-estimates; one estimate is classified normally', () => {
