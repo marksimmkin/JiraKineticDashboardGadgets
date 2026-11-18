@@ -4,4 +4,4 @@ Treat a ticket's assignee as its user. Include Unassigned as a separate row. Sho
 
 Show only statuses listed in the Controller with Show ticked, and show a "Hiding:" note naming the others. Hidden statuses remove their columns and issues from person totals and the displayed total.
 
-Total time remaining is the sum of Remaining Estimate, shown as days then hours, for example 6.0d (42h), using the hours per day set in this gadget's Edit view (default 7).
+Total time remaining is the sum of Remaining Estimate, shown as days then hours, for example 6.0d (42h), using the hours per day set in the Controller's Edit settings (default 7). This gadget has no Edit view.

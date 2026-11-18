@@ -6,8 +6,8 @@ export const USER_METRICS = [
 
 const scoreFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 const numberFormat = new Intl.NumberFormat();
-// KDG-28: time remaining is shown as days then hours. Hours per day is set in each gadget's
-// Edit view (see hoursPerDay in capacity.mjs) and defaults to 7.
+// KDG-28: time remaining is shown as days then hours. KDG-31: hours per day is set in the
+// Controller's Edit settings and arrives in its payload (see hoursPerDay in shared.mjs); default 7.
 export const DEFAULT_USER_HOURS_PER_DAY = 7;
 const SECONDS_PER_HOUR = 3600;
 const dayFormat = new Intl.NumberFormat('en-GB', { minimumFractionDigits: 1, maximumFractionDigits: 1 });

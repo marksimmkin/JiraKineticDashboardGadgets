@@ -18,8 +18,9 @@ const STATUSES = [
   { name: 'To Do', weight: 1, color: '#0c66e4', show: true },
   { name: 'Closed', weight: 0, color: '#e2b203', show: false },
 ];
+// KDG-31: hours per day comes from the Controller's payload; these tests use 8.
 const PAYLOAD = { statuses: STATUSES, hiddenStatuses: ['Closed'], shownStatuses: ['To Do'],
-  startDate: '2026-01-01', endDate: '2026-05-29' };
+  startDate: '2026-01-01', endDate: '2026-05-29', hoursPerDay: 8 };
 const CATEGORY = { 'To Do': ['1', 'new'], Closed: ['5', 'done'] };
 const NAMES = { a: 'Alex Smith', s: 'Sam Lee', j: 'Jo Park' };
 const DAY = 8 * 3600;
@@ -127,7 +128,7 @@ test('QA KDG-33: switching from an ended filter to a running one restores the sc
   }));
 
 test('QA KDG-33: the no-days legend uses the configured hours per day', withTimers(async () => {
-  const g = await show([issue('s', 2)], {}, { configuration: { hoursPerDay: 7.5 } });
+  const g = await show([issue('s', 2)], { hoursPerDay: 7.5 });
   assert.match(g.find('capacity-legend').textContent,
     /^No working days left, so all remaining work is over capacity\. A day is 7\.5 hours\.$/);
 }));

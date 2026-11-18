@@ -1,5 +1,5 @@
-// KDG-28: Total time remaining shown in days and hours, with hours per day set in each gadget's
-// Edit view (default 7).
+// KDG-28: Total time remaining shown in days and hours. KDG-31: hours per day comes from the
+// Controller's payload (default 7).
 import assert from 'node:assert/strict';
 import test, { mock } from 'node:test';
 import { FILTER_SELECTED } from '../static/shared.mjs';
@@ -77,16 +77,16 @@ test('KDG-28 timeRemainingSpoken: singulars only for exactly 1.0 day and 1 hour'
   assert.equal(timeRemainingSpoken(151200, 7.5), '5.6 days, 42 hours');
 });
 
-test('KDG-28 hoursPerDay: User List/Leaderboard fallback 7; Capacity default stays 8', () => {
+test('KDG-28/KDG-31 hoursPerDay: every gadget defaults to 7', () => {
   const user = config => hoursPerDay(config, DEFAULT_USER_HOURS_PER_DAY);
   assert.equal(user(undefined), 7);
   assert.equal(user({}), 7);
   assert.equal(user({ hoursPerDay: 8 }), 8);
   assert.equal(user({ hoursPerDay: 7.5 }), 7.5);
   for (const bad of ['8', 0, 25, -1, NaN, Infinity, null]) assert.equal(user({ hoursPerDay: bad }), 7, String(bad));
-  assert.equal(DEFAULT_HOURS_PER_DAY, 8);
-  assert.equal(hoursPerDay(undefined), 8);
-  assert.equal(hoursPerDay({ hoursPerDay: 'x' }), 8);
+  assert.equal(DEFAULT_HOURS_PER_DAY, 7);
+  assert.equal(hoursPerDay(undefined), 7);
+  assert.equal(hoursPerDay({ hoursPerDay: 'x' }), 7);
 });
 
 test('KDG-28 sorting: by seconds, so 0.5d is below 1.0d and 1,250.0d above 5.3d', () => {
@@ -123,9 +123,10 @@ function issue(user, seconds) {
 const jiraWith = issues => path => (path.includes('search/jql') ? ok({ issues, isLast: true }) : undefined);
 const PAYLOAD = { statuses: [{ name: 'To Do', weight: 1 }], hiddenStatuses: [], shownStatuses: ['To Do'] };
 
-async function showTime(name, issues, configuration) {
-  const g = await startGadget(name, { jira: jiraWith(issues), configuration });
-  await g.bus.send(FILTER_SELECTED, selection(PAYLOAD));
+// `payload` is merged into the Controller selection, e.g. { hoursPerDay: 8 } (KDG-31).
+async function showTime(name, issues, payload = {}) {
+  const g = await startGadget(name, { jira: jiraWith(issues) });
+  await g.bus.send(FILTER_SELECTED, selection({ ...PAYLOAD, ...payload }));
   await flush();
   const select = g.find('user-metric-select');
   select.value = 'time';
@@ -178,9 +179,9 @@ test('KDG-28 user-list: sorts by seconds (0.5d below 1.0d, 1,250.0d above 5.3d)'
   assert.deepEqual(order(), ['User u2', 'User u4', 'User u1', 'User u3']);
 }));
 
-test('KDG-28 user-list: hours per day from the configuration (default 7, saved 8, 7.5, invalid → 7)',
+test('KDG-31 user-list: hours per day from the Controller payload (older payload 7, 8, 7.5, invalid → 7)',
   withTimers(async () => {
-    const text = async configuration => cellOf(await showTime('user-list', [issue('u1', 151200)], configuration),
+    const text = async payload => cellOf(await showTime('user-list', [issue('u1', 151200)], payload),
       'User u1').children[0].textContent;
     assert.equal(await text(undefined), shown('6.0d (42h)'));
     assert.equal(await text({ hoursPerDay: 8 }), shown('5.3d (42h)'));
@@ -232,90 +233,4 @@ test('KDG-28 user-leaderboard: other metrics have no aria-valuetext and keep the
     assert.equal(g.find('leaderboard-detail').textContent, '1 weighted score · 1 tickets');
   }));
 
-// ---- Edit views ----
-
-for (const [name, heading] of [['user-list', 'User list settings'], ['user-leaderboard', 'Leaderboard settings']]) {
-  async function editView(configuration) {
-    const g = await startGadget(name, { entryPoint: 'edit', configuration });
-    const form = g.root.querySelector('form');
-    const input = g.root.querySelector('input');
-    const submit = async value => {
-      input.value = value;
-      form.dispatchEvent({ type: 'submit', preventDefault() {} });
-      await flush();
-    };
-    return { g, form, input, submit, error: g.find('error'), save: g.root.querySelector('button') };
-  }
-
-  test(`KDG-28 ${name} edit: form, prefill 7 and attributes`, withTimers(async () => {
-    const { g, form, input, error, save } = await editView();
-    assert.ok(form.classList.contains('panel'));
-    assert.ok(form.classList.contains('hours-edit'));
-    assert.equal(form.noValidate, true);
-    assert.equal(g.find('config-heading').textContent, heading);
-    const label = g.root.querySelector('label');
-    assert.ok(label.textContent.startsWith('Hours per working day'));
-    assert.equal(input.parentNode, label);
-    assert.equal(input.value, '7');
-    assert.equal(input.type, 'text');
-    assert.equal(input.getAttribute('inputmode'), 'decimal');
-    const help = g.root.querySelector(`#${name}-hours-help`);
-    assert.equal(help.textContent,
-      'Turns Remaining Estimate into days for Total time remaining. Applies to everyone. Default 7.');
-    assert.equal(input.getAttribute('aria-describedby'), `${name}-hours-help`);
-    assert.equal(error.getAttribute('role'), 'alert');
-    assert.equal(save.textContent, 'Save settings');
-    assert.equal(g.requests.length, 0, 'no Jira requests');
-    assert.equal(g.emitted('kinetic.dashboard.filter.request').length, 0, 'Edit view does not ask the Controller');
-    assert.equal((await editView({ hoursPerDay: 7.5 })).input.value, '7.5');
-    assert.equal((await editView({ hoursPerDay: 8 })).input.value, '8');
-    assert.equal((await editView({ hoursPerDay: 99 })).input.value, '7', 'invalid saved value falls back to 7');
-  }));
-
-  test(`KDG-28 ${name} edit: validation, "7,5" saves 7.5, typing clears the error`, withTimers(async () => {
-    const { g, input, submit, error } = await editView();
-    for (const value of ['', '0', '25', 'abc', '7.5h']) {
-      g.doc.activeElement = null;
-      await submit(value);
-      assert.equal(error.textContent, 'Enter hours from 1 to 24, for example 7.5.', `"${value}"`);
-      assert.equal(input.getAttribute('aria-invalid'), 'true');
-      assert.equal(input.getAttribute('aria-describedby'), `${name}-hours-help ${name}-hours-error`);
-      assert.equal(g.doc.activeElement, input, 'focus moves to the input');
-    }
-    assert.deepEqual(g.submitted, []);
-    input.value = '7';
-    input.dispatchEvent({ type: 'input' });
-    assert.equal(error.textContent, '');
-    assert.equal(input.hasAttribute('aria-invalid'), false);
-    assert.equal(input.getAttribute('aria-describedby'), `${name}-hours-help`);
-    await submit('7,5');
-    assert.deepEqual(g.submitted, [{ hoursPerDay: 7.5 }]);
-  }));
-
-  test(`KDG-28 ${name} edit: save failure can be retried; other saved settings are kept`, withTimers(async () => {
-    const { g, submit, error, save } = await editView({ hoursPerDay: 6, other: 'keep me' });
-    let finish;
-    g.bridge.view.submit = () => new Promise((resolve, reject) => { finish = reject; });
-    await submit('6');
-    assert.equal(save.disabled, true, 'disabled while saving');
-    finish(new Error('nope'));
-    await flush();
-    assert.equal(error.textContent, 'Could not save the settings. Please try again.');
-    assert.equal(save.disabled, false);
-    g.bridge.view.submit = async payload => { g.submitted.push(payload); };
-    await submit(' 8 ');
-    assert.deepEqual(g.submitted, [{ hoursPerDay: 8, other: 'keep me' }]);
-  }));
-}
-
-test('KDG-28 capacity edit: shared form adds hours-edit but keeps its ids, copy and default 8', withTimers(async () => {
-  const g = await startGadget('capacity', { entryPoint: 'edit' });
-  const form = g.root.querySelector('form');
-  assert.ok(form.classList.contains('hours-edit'));
-  assert.ok(form.classList.contains('capacity-edit'));
-  assert.equal(g.root.querySelector('input').id, 'capacity-hours');
-  assert.equal(g.root.querySelector('input').value, '8');
-  assert.equal(g.root.querySelector('#capacity-hours-help').textContent,
-    'Turns Remaining Estimate into days. Applies to everyone. Default 8.');
-  assert.equal(g.find('config-heading').textContent, 'Capacity settings');
-}));
+// KDG-31: User List and User Leaderboard have no Edit view; see kdg-31-hours-in-controller.test.mjs.

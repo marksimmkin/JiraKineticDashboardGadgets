@@ -4,4 +4,4 @@ Treat users as assignees of issues in the selected Controller JQL, with Unassign
 
 Show only statuses listed in the Controller with Show ticked, and show a "Hiding:" note naming the others. Hidden statuses and their issues are excluded from scores, rankings, and issue counts.
 
-Total time remaining is the sum of Remaining Estimate, shown as days then hours, for example 6.0d (42h), using the hours per day set in this gadget's Edit view (default 7).
+Total time remaining is the sum of Remaining Estimate, shown as days then hours, for example 6.0d (42h), using the hours per day set in the Controller's Edit settings (default 7). This gadget has no Edit view.

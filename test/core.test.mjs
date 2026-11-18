@@ -32,7 +32,7 @@ test('saved filters are normalized and invalid entries are ignored', () => {
     dashboardId: '12', controllerId: '7', name: 'Release', jql: 'project = GAME',
     startDate: '2026-01-01', endDate: '2026-03-31',
     statuses: [{ name: 'In Progress', weight: 0.5, color: '#0c66e4' }],
-    hiddenStatuses: [], shownStatuses: [],
+    hiddenStatuses: [], shownStatuses: [], hoursPerDay: 7,
   });
   assert.deepEqual(configuredStatuses({ extension: { gadgetConfiguration: {} } }), []);
   assert.equal(statusKey(' To Do '), 'to do');

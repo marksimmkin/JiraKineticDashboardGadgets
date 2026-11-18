@@ -29,8 +29,8 @@ test('selectionKey is null when the revision is missing or null', () => {
 
 test('selectionKey has the documented shape and defaults', () => {
   assert.equal(selectionKey(selection()), JSON.stringify(['n1:1', 'project = A', '2026-10-01',
-    '2026-10-31', [{ name: 'Done', weight: 0, color: '#22a06b' }], [], []]));
-  assert.equal(selectionKey({ revision: 'n:0' }), JSON.stringify(['n:0', null, null, null, [], [], []]));
+    '2026-10-31', [{ name: 'Done', weight: 0, color: '#22a06b' }], [], [], 7]));
+  assert.equal(selectionKey({ revision: 'n:0' }), JSON.stringify(['n:0', null, null, null, [], [], [], 7]));
 });
 
 test('selectionKey changes with revision, JQL, dates or statuses, but not name or ids', () => {
@@ -38,7 +38,7 @@ test('selectionKey changes with revision, JQL, dates or statuses, but not name o
   assert.equal(selectionKey(selection({ name: 'Other', controllerId: 'c2' })), base);
   for (const change of [{ revision: 'n1:2' }, { revision: 'n2:1' }, { jql: 'project = B' },
     { startDate: '2026-10-02' }, { endDate: null }, { statuses: [] },
-    { statuses: [{ name: 'Done', weight: 0.5, color: '#22a06b' }] }]) {
+    { statuses: [{ name: 'Done', weight: 0.5, color: '#22a06b' }] }, { hoursPerDay: 7.5 }]) {
     assert.notEqual(selectionKey(selection(change)), base, JSON.stringify(change));
   }
 });

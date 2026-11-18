@@ -1,20 +1,11 @@
 import { dateOrdinal } from './progress.mjs';
+import { DEFAULT_HOURS_PER_DAY, hoursPerDay, validHoursPerDay as validHours } from './shared.mjs';
 
-export const DEFAULT_HOURS_PER_DAY = 8;
+// KDG-31: hours per day is a Controller setting (default 7); see shared.mjs.
+export { DEFAULT_HOURS_PER_DAY, hoursPerDay };
 const UNASSIGNED_ID = '__unassigned__';
 
-function validHours(value) {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 1 && value <= 24;
-}
-
-// `config` is the gadget's saved configuration (context.extension.gadgetConfiguration).
-// `fallback` is used when nothing valid is saved (User List and User Leaderboard default to 7).
-export function hoursPerDay(config, fallback = DEFAULT_HOURS_PER_DAY) {
-  const value = config?.hoursPerDay;
-  return validHours(value) ? value : fallback;
-}
-
-// Edit-form input: "7.5", "7,5", " 8 " are accepted. Returns the number, or null when the text is
+// Hours per working day input: "7.5", "7,5", " 8 " are accepted. Returns the number, or null when the text is
 // empty, not a plain decimal, or outside 1 to 24.
 export function parseHoursInput(text) {
   if (typeof text !== 'string' && typeof text !== 'number') return null;

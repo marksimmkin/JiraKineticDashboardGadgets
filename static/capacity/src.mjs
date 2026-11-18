@@ -3,11 +3,10 @@ import { searchAllIssues, summarizeAssignees } from '../issue-data.mjs';
 import { assigneeClause, issueCountButton, narrowJql, statusesClause } from '../drilldown.mjs';
 import { hiddenNote, shownIssues, statusVisibility } from '../status-visibility.mjs';
 import { createHiddenNote } from '../status-note.mjs';
-import { capacityRows, hoursPerDay, workingDaysLeft } from '../capacity.mjs';
-import { showHoursEditForm } from '../hours-edit.mjs';
+import { capacityRows, workingDaysLeft } from '../capacity.mjs';
 import { dateOrdinal, todayInTimezone } from '../progress.mjs';
 import { dashboardId, gadgetId, FILTER_REQUEST, FILTER_SELECTED,
-  GADGET_REFRESH, createSelectionTracker, isForDashboard, statusKey } from '../shared.mjs';
+  GADGET_REFRESH, createSelectionTracker, hoursPerDay, isForDashboard, statusKey } from '../shared.mjs';
 
 const root = document.getElementById('app');
 const numberFormat = new Intl.NumberFormat('en-GB');
@@ -58,21 +57,9 @@ function rangeText(payload, left) {
   return `${span} · ${workingDays(left.days)} left`;
 }
 
-function edit(context) {
-  showHoursEditForm(root, {
-    submit: payload => view.submit(payload),
-    idPrefix: 'capacity',
-    className: 'capacity-edit',
-    heading: 'Capacity settings',
-    help: 'Turns Remaining Estimate into days. Applies to everyone. Default 8.',
-    value: hoursPerDay(context?.extension?.gadgetConfiguration),
-  });
-}
-
 async function display(context) {
   const id = dashboardId(context);
   if (!id) throw new Error('Dashboard context is unavailable.');
-  const hours = hoursPerDay(context?.extension?.gadgetConfiguration);
   const panel = node('section', 'panel capacity');
   const heading = node('p', 'eyebrow', 'Capacity by assignee');
   const filterName = node('p', 'chart-filter-name');
@@ -146,6 +133,7 @@ async function display(context) {
   }
 
   function showRows(summary, visibleJql, narrowed) {
+    const { hours } = active;
     const scope = narrowed ? ' in shown statuses' : '';
     const { rows, scale } = capacityRows(summary, { hoursPerDay: hours, daysLeft: left.days });
     let meters = 0;
@@ -288,6 +276,8 @@ async function display(context) {
       statuses: Array.isArray(payload.statuses)
         ? payload.statuses.filter(status => statusKey(status?.name)) : [],
       visibility: statusVisibility(payload, { listedOnly: true }),
+      // KDG-31: from the Controller; an older Controller without it means 7.
+      hours: hoursPerDay(payload),
     };
     filterName.textContent = active.name ?? '';
     void refresh();
@@ -306,9 +296,7 @@ async function display(context) {
 async function main() {
   try {
     await view.theme.enable();
-    const context = await view.getContext();
-    if (context.extension?.entryPoint === 'edit') await edit(context);
-    else await display(context);
+    await display(await view.getContext());
   } catch (error) {
     root.textContent = error.message || 'Could not load capacity.';
   }

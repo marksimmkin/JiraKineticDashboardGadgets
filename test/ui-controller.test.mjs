@@ -18,7 +18,9 @@ function expected(controller, overrides) {
   return { dashboardId: 'd1', controllerId: controller.gadgetId, name: 'Alpha', jql: 'project = A',
     startDate: '2026-01-01', endDate: '2026-03-31', statuses: STATUSES,
     // KDG-24: neither saved status has an explicit Show flag.
-    hiddenStatuses: [], shownStatuses: [], ...overrides };
+    hiddenStatuses: [], shownStatuses: [],
+    // KDG-31: nothing saved, so the default 7.
+    hoursPerDay: 7, ...overrides };
 }
 const BETA = { name: 'Beta', jql: 'project = B ORDER BY rank', startDate: null, endDate: null };
 
@@ -130,6 +132,7 @@ test('KDG-7 Controller: edit mode loads statuses and submits the configuration',
   assert.deepEqual(c.submitted, [{
     filters: CONFIG.filters.map(f => ({ startDate: null, endDate: null, ...f })),
     statuses: STATUSES,
+    hoursPerDay: 7,
   }]);
 }));
 
