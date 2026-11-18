@@ -177,9 +177,11 @@ test('QA KDG-22: ended range keeps Unassigned last and people sorted by work', w
   const g = await show([issue(null, null, 50 * DAY), issue('a', 'Amy', DAY), issue('b', 'Ben', 3 * DAY),
     issue('c', 'Cal', null)], { endDate: '2026-05-01' });
   assert.deepEqual(rowsOf(g).map(r => r.find('leaderboard-name').textContent), ['Ben', 'Amy', 'Cal', 'Unassigned']);
-  assert.deepEqual(rowsOf(g).map(detail), ['3.0 days of work', '1.0 day of work', '0.0 days of work',
+  // KDG-33: with no working days left people's work is over capacity; Unassigned stays unjudged.
+  assert.deepEqual(rowsOf(g).map(detail), ['3.0 of 0 days', '1.0 of 0 days', '0.0 of 0 days',
     '50.0 days of work']);
-  assert.equal(meta(rowsOf(g)[2]), '1 issue · 1 without estimate');
+  assert.equal(meta(rowsOf(g)[0]), 'Overallocated 3.0 days over · 1 issue');
+  assert.equal(meta(rowsOf(g)[2]), 'No estimates 1 issue · 1 without estimate');
 }));
 
 test('QA KDG-22: a repeated selection and a refresh each search once; a superseded search is dropped',

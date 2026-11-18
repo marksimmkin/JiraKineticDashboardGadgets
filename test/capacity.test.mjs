@@ -172,23 +172,38 @@ test('capacity sorts by allocation, ties A to Z, Unassigned last', () => {
   assert.deepEqual(rows.map(row => row.name), ['Casey', 'alex', 'Blair', 'Unassigned']);
 });
 
-test('with no working days left rows are unjudged and sorted by work days', () => {
+test('KDG-33: with no working days left any work is over by all of it, sorted by work days', () => {
   const { rows, scale } = capacityRows({ rows: [
     { id: '__unassigned__', name: 'Unassigned', timeRemaining: 999 * HOUR, total: 1, estimatedIssues: 1 },
     person('b', 'Blair', 8 * HOUR, 1),
     person('a', 'Alex', 8 * HOUR, 1),
     person('c', 'Casey', 80 * HOUR, 1),
+    person('z', 'Zero', 0, 2, 1),
     person('n', 'Nobody', 0, 2, 0),
   ] }, { hoursPerDay: 8, daysLeft: 0 });
-  assert.deepEqual(rows.map(row => row.name), ['Casey', 'Alex', 'Blair', 'Nobody', 'Unassigned']);
-  for (const row of rows) {
-    assert.equal(row.state, 'none');
-    assert.equal(row.allocation, null);
-    assert.equal(row.percent, null);
-    assert.equal(row.spareDays, null);
-    assert.equal(row.overDays, null);
-  }
+  assert.deepEqual(rows.map(row => row.name), ['Casey', 'Alex', 'Blair', 'Nobody', 'Zero', 'Unassigned']);
+  const byId = Object.fromEntries(rows.map(row => [row.id, row]));
+  assert.deepEqual(byId.c, { id: 'c', name: 'Casey', unassigned: false, workDays: 10, total: 1, withoutEstimate: 0,
+    allocation: null, percent: null, state: 'over', spareDays: null, overDays: 10 });
+  assert.equal(byId.a.state, 'over');
+  assert.equal(byId.a.overDays, 1);
+  assert.deepEqual([byId.z.state, byId.z.spareDays, byId.z.overDays, byId.z.percent], ['normal', 0, null, null]);
+  assert.deepEqual([byId.n.state, byId.n.spareDays, byId.n.overDays, byId.n.percent], ['no-estimates', null, null, null]);
+  assert.equal(byId.__unassigned__.state, 'none');
+  assert.equal(byId.__unassigned__.overDays, null);
+  for (const row of rows) assert.equal(row.allocation, null);
   assert.equal(scale, 100);
+});
+
+test('KDG-33: with no working days left the over threshold uses the rounded work', () => {
+  // 0.04 days rounds to 0.0: not over.
+  const tiny = capacityRows({ rows: [person('a', 'A', 0.04 * 8 * HOUR, 1)] }, { hoursPerDay: 8, daysLeft: 0 });
+  assert.equal(tiny.rows[0].workDays, 0);
+  assert.equal(tiny.rows[0].state, 'normal');
+  // 0.06 days rounds to 0.1: over by 0.1.
+  const small = capacityRows({ rows: [person('a', 'A', 0.06 * 8 * HOUR, 1)] }, { hoursPerDay: 8, daysLeft: 0 });
+  assert.equal(small.rows[0].state, 'over');
+  assert.equal(small.rows[0].overDays, 0.1);
 });
 
 test('capacity scale is the highest allocation clamped to 100%..200%', () => {

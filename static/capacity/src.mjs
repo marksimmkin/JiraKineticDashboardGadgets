@@ -97,7 +97,30 @@ async function display(context) {
     legend.replaceChildren();
   }
 
+  // KDG-33: with no working days left there is no capacity, so any work fills the whole
+  // (capped) track and there is no full-capacity line.
+  function emptyMeter(row) {
+    const track = node('div', 'leaderboard-track capacity-track');
+    const fill = node('div', `capacity-fill is-${row.state}`);
+    const over = row.state === 'over';
+    fill.style.width = over ? '100%' : '0%';
+    if (over) track.classList.add('is-capped');
+    track.setAttribute('role', 'meter');
+    track.setAttribute('aria-label', `${row.name} capacity`);
+    track.setAttribute('aria-valuemin', '0');
+    track.setAttribute('aria-valuemax', '1');
+    track.setAttribute('aria-valuenow', over ? '1' : '0');
+    const of = `${daysFormat.format(row.workDays)} of ${workingDays(0)}`;
+    track.setAttribute('aria-valuetext',
+      row.state === 'no-estimates'
+        ? `No remaining estimates, ${row.withoutEstimate}${issues(row.withoutEstimate)} without estimate`
+        : over ? `${of}, overallocated by ${days(row.overDays)}` : of);
+    track.append(fill);
+    return track;
+  }
+
   function meter(row, scale) {
+    if (left.days === 0) return emptyMeter(row);
     const track = node('div', 'leaderboard-track capacity-track');
     const fill = node('div', `capacity-fill is-${row.state}`);
     const shown = Math.min(row.allocation, scale);
@@ -133,7 +156,7 @@ async function display(context) {
       const name = node('span', 'leaderboard-name', row.name);
       const of = `${daysFormat.format(row.workDays)} of ${numberFormat.format(left.days)} ${left.days === 1 ? 'day' : 'days'}`;
       const detail = node('span', 'leaderboard-detail', !judged ? `${days(row.workDays)} of work`
-        : row.state === 'no-estimates' ? of : `${of} · ${row.percent}%`);
+        : row.state === 'no-estimates' || left.days === 0 ? of : `${of} · ${row.percent}%`);
       line.append(name, detail);
       item.append(line);
       if (judged) {
@@ -168,7 +191,9 @@ async function display(context) {
       item.append(meta);
       rowsArea.append(item);
     }
-    legend.textContent = meters ? `The line marks full capacity. ${hoursText(hours)}` : hoursText(hours);
+    legend.textContent = !meters ? hoursText(hours)
+      : left.days === 0 ? `No working days left, so all remaining work is over capacity. ${hoursText(hours)}`
+        : `The line marks full capacity. ${hoursText(hours)}`;
     legend.hidden = false;
     message.replaceChildren(
       issueCountButton(router, numberFormat.format(summary.total), visibleJql,
